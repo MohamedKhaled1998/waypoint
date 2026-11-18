@@ -24,7 +24,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     session
-      .restore()
+      .renew()
       .then((ok) => setStatus(ok ? 'signedIn' : 'signedOut'))
       // Offline on start: keep the stored token and show sign-in; the next launch retries.
       .catch(() => setStatus('signedOut'));
@@ -34,7 +34,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     () => ({
       status,
       getAccessToken: session.getAccessToken,
-      renewAccess: () => session.restore().catch(() => false),
+      async renewAccess() {
+        try {
+          const ok = await session.renew();
+          // The server rejected the refresh token: the phone is wiped, so show sign-in.
+          if (!ok) setStatus('signedOut');
+          return ok;
+        } catch {
+          // Offline: keep the session and let the call fail; the next 401 tries again.
+          return false;
+        }
+      },
       async signIn() {
         try {
           const idToken = await getGoogleIdToken();
