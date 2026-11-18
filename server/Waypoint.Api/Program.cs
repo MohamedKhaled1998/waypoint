@@ -93,6 +93,7 @@ app.MapGet("/me/sessions", async (TimeProvider clock, WaypointDb db, Cancellatio
 }).RequireAuthorization();
 
 app.MapCoachChat();
+app.MapInterviews();
 
 app.Run();
 

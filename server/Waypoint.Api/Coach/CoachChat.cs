@@ -23,8 +23,6 @@ public static class CoachChat
     {
         app.MapGet("/coach/messages", async (WaypointDb db, CancellationToken ct) =>
             Results.Ok(await ThreadAsync(db, ct))).RequireAuthorization();
-
-
         app.MapPost("/coach/messages", Send).RequireAuthorization();
     }
 
@@ -35,7 +33,8 @@ public static class CoachChat
         var answered = all.Where(m => m.InReplyToId is not null).Select(m => m.InReplyToId!.Value).ToHashSet();
         return all.Select(m => (object)new
         {
-            m.Id, m.Role, m.Text, m.AspirationId, m.ClientId,
+            m.Id, m.Role, m.Text, m.AspirationId, m.ClientId, m.Card,
+            CardData = m.CardJson is null ? null : System.Text.Json.Nodes.JsonNode.Parse(m.CardJson),
             Replied = m.Role != "user" || answered.Contains(m.Id),
             CreatedAt = DateTime.SpecifyKind(m.CreatedAt, DateTimeKind.Utc),
         }).ToArray();

@@ -21,5 +21,5 @@ public sealed class AnthropicOptions
 {
     public string? ApiKey { get; set; }
     public string BaseUrl { get; set; } = "https://api.anthropic.com";
-    public int MaxTokens { get; set; } = 1024;
+    public int MaxTokens { get; set; } = 2048;
 }

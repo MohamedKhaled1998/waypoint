@@ -10,11 +10,16 @@ public sealed class FakeCoachModelClient : ICoachModelClient
     public bool Fail { get; set; }
     public List<CoachRequest> Requests { get; } = [];
 
+    /// <summary>Scripted replies, one per call, used before <see cref="Chunks"/>.</summary>
+    public Queue<string[]> Script { get; } = new();
+    public void Enqueue(params string[] chunks) => Script.Enqueue(chunks);
+
     public async IAsyncEnumerable<string> StreamAsync(CoachRequest request, [EnumeratorCancellation] CancellationToken ct)
     {
         Requests.Add(request);
         if (Fail) throw new InvalidOperationException("provider down");
-        foreach (var chunk in Chunks)
+        var chunks = Script.Count > 0 ? Script.Dequeue() : Chunks.ToArray();
+        foreach (var chunk in chunks)
         {
             await Task.Yield();
             yield return chunk;
