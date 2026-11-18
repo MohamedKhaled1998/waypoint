@@ -78,7 +78,8 @@ export function createCoachChat(api: CoachApi, deps: Deps) {
           ...local,
         ],
       });
-      if (chat.state.messages.some((m) => m.status === 'saved')) set({ late: true });
+      // The Coach is late while a message waits for its reply, and not once the thread shows every one answered.
+      set({ late: chat.state.messages.some((m) => m.status === 'saved') });
     },
 
     /** Adds the message at once, then delivers it. Deliveries run one at a time, in order. */

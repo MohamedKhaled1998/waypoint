@@ -1,8 +1,9 @@
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSession } from '../auth/SessionProvider';
-import { httpTodayApi } from './api';
+import { phoneStorage } from '../sync/phone';
 import { createCheckInTask } from './checkin';
+import { createOfflineToday, type SlotView } from './offline';
 import type { ScheduledActionView } from './today';
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -12,20 +13,25 @@ export function localNow(d = new Date()) {
 
 export const actionById = (actions: ScheduledActionView[], id: string | undefined) => actions.find((a) => a.id === id);
 
-/** The scheduled Actions, the quick Check-in task with its Undo, and a reload after each change. */
+const RETRY_MS = 30_000;
+
+/**
+ * The scheduled Actions from the phone's cache, the quick Check-in task with its Undo, and moves. Everything the user
+ * does goes through the outbox, so it works with the server out of reach; a sync runs on focus and every 30 s.
+ */
 export function useToday() {
-  const session = useSession();
+  const { phone } = useSession();
   const [actions, setActions] = useState<ScheduledActionView[]>([]);
+  const [slots, setSlots] = useState<SlotView[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   const [undo, setUndo] = useState<{ scheduledActionId: string; state: string } | null>(null);
-  // Token functions are read at call time.
-  const api = useMemo(() => httpTodayApi(session), [session.status]); // eslint-disable-line react-hooks/exhaustive-deps
+  const api = useMemo(() => createOfflineToday({ storage: phoneStorage, sync: phone.sync }), [phone]);
   const reload = useCallback(() => {
-    api
-      .actions()
-      .then((a) => {
+    Promise.all([api.actions(), api.slots()])
+      .then(([a, s]) => {
         setActions(a);
+        setSlots(s);
         setLoaded(true);
       })
       .catch(() => {});
@@ -45,6 +51,14 @@ export function useToday() {
       }),
     [api, reload],
   );
-  useFocusEffect(reload);
-  return { actions, loaded, task, undo, failed };
+  useEffect(() => phone.subscribe(reload), [phone, reload]);
+  useFocusEffect(
+    useCallback(() => {
+      reload();
+      void phone.sync.sync();
+      const timer = setInterval(() => void phone.sync.sync(), RETRY_MS);
+      return () => clearInterval(timer);
+    }, [phone, reload]),
+  );
+  return { actions, slots, loaded, task, undo, failed, move: api.move };
 }

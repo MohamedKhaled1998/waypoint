@@ -97,4 +97,26 @@ describe('session', () => {
     await session.signOut();
     expect(await storage.get('refreshToken')).toBeNull();
   });
+
+  it('signing out wipes the cache and outbox, even when the server cannot be reached', async () => {
+    const api = fakeApi();
+    let wiped = 0;
+    const session = createSession(new MemoryStorage(), api, async () => void wiped++);
+    await session.signIn('good');
+    api.signOut = async () => {
+      throw new Error('offline');
+    };
+    await session.signOut();
+    expect(wiped).toBe(1);
+  });
+
+  it('knows a session is kept even when it cannot be resumed yet', async () => {
+    const storage = new MemoryStorage();
+    const session = createSession(storage, fakeApi());
+    expect(await session.hasStoredSession()).toBe(false);
+    await session.signIn('good');
+    expect(await session.hasStoredSession()).toBe(true);
+    await session.signOut();
+    expect(await session.hasStoredSession()).toBe(false);
+  });
 });

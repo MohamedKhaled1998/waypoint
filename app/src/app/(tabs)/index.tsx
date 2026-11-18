@@ -21,7 +21,7 @@ export default function TodayScreen() {
   const unfinished = useUnfinishedInterview();
   const { drafting, late, retryDraft, waitingVersionId } = usePlanBanners();
   const { plans } = usePlanSummaries();
-  const { actions, loaded, task, undo, failed } = useToday();
+  const { actions, slots, loaded, task, undo, failed, move } = useToday();
   const [sheet, setSheet] = useState<{ action: ScheduledActionView; choice?: CheckInState } | null>(null);
 
   const now = localNow();
@@ -114,6 +114,7 @@ export default function TodayScreen() {
               ))}
               {today.nowLineBefore >= today.timeline.length && today.timeline.length > 0 ? <NowLine /> : null}
             </View>
+            {today.plannedUntil && today.plannedUntil <= now.date ? <Text muted>{t('today.pastCache', { date: today.plannedUntil })}</Text> : null}
           </>
         )}
       </ScrollView>
@@ -140,6 +141,9 @@ export default function TodayScreen() {
         initialChoice={sheet?.choice}
         onClose={() => setSheet(null)}
         onSubmit={(req) => task.submit(req)}
+        slots={slots}
+        now={now}
+        onMove={(date, slotId) => move(sheet!.action.id, date, slotId)}
       />
     </View>
   );

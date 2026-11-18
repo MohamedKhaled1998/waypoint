@@ -78,6 +78,35 @@ namespace Waypoint.Api.Data.Migrations
                     b.ToTable("Aspirations");
                 });
 
+            modelBuilder.Entity("Waypoint.Api.Data.Change", b =>
+                {
+                    b.Property<long>("Seq")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Seq"));
+
+                    b.Property<bool>("Deleted")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<Guid>("EntityId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("varchar(24)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("char(36)");
+
+                    b.HasKey("Seq");
+
+                    b.HasIndex("UserId", "Seq");
+
+                    b.ToTable("Changes");
+                });
+
             modelBuilder.Entity("Waypoint.Api.Data.ChatMessage", b =>
                 {
                     b.Property<long>("Seq")
@@ -550,6 +579,10 @@ namespace Waypoint.Api.Data.Migrations
                     b.Property<int>("Minutes")
                         .HasColumnType("int");
 
+                    b.Property<string>("MoveClientIds")
+                        .HasMaxLength(1024)
+                        .HasColumnType("varchar(1024)");
+
                     b.Property<Guid>("PlanVersionId")
                         .HasColumnType("char(36)");
 
@@ -649,6 +682,15 @@ namespace Waypoint.Api.Data.Migrations
                 });
 
             modelBuilder.Entity("Waypoint.Api.Data.Aspiration", b =>
+                {
+                    b.HasOne("Waypoint.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Waypoint.Api.Data.Change", b =>
                 {
                     b.HasOne("Waypoint.Api.Data.User", null)
                         .WithMany()

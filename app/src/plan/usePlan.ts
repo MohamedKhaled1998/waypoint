@@ -2,13 +2,14 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { useSession } from '../auth/SessionProvider';
 import { httpPlanApi } from './api';
+import { offlinePlanApi } from './offlineApi';
 import { createPlanReview, type PlanSummary } from './review';
 
 /** One Plan review, for the version in the route. */
 export function usePlanReview(versionId: string) {
   const session = useSession();
   const review = useMemo(
-    () => createPlanReview(httpPlanApi(session), versionId),
+    () => createPlanReview(offlinePlanApi({ sync: session.phone.sync, api: httpPlanApi(session) }), versionId),
     // Token functions are read at call time.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [session.status, versionId],

@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import { httpAuth } from './api';
 import { clearGoogleAccount, getGoogleIdToken } from './google';
 import { keystoreStorage } from './secureStorage';
+import { createPhoneSync, phoneStorage, type PhoneSync } from '../sync/phone';
 import { createSession } from './session';
 
 type Status = 'loading' | 'signedOut' | 'signedIn';
@@ -14,20 +15,26 @@ type Value = {
   renewAccess: () => Promise<boolean>;
   signIn: () => Promise<SignInResult>;
   signOut: () => Promise<void>;
+  /** The cache, outbox and pull; the same one for every screen. */
+  phone: PhoneSync;
 };
 
 const SessionContext = createContext<Value | null>(null);
 
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const session = useMemo(() => createSession(keystoreStorage, httpAuth), []);
+  const session = useMemo(() => createSession(keystoreStorage, httpAuth, () => phoneStorage.wipe()), []);
+  const phone = useMemo(
+    () => createPhoneSync({ getAccessToken: session.getAccessToken, renewAccess: () => session.restore().catch(() => false) }),
+    [session],
+  );
   const [status, setStatus] = useState<Status>('loading');
 
   useEffect(() => {
     session
       .restore()
       .then((ok) => setStatus(ok ? 'signedIn' : 'signedOut'))
-      // Offline on start: keep the stored token and show sign-in; the next launch retries.
-      .catch(() => setStatus('signedOut'));
+      // The server is out of reach: a kept session starts from the cache, and the access token renews on the first call.
+      .catch(async () => setStatus((await session.hasStoredSession().catch(() => false)) ? 'signedIn' : 'signedOut'));
   }, [session]);
 
   const value = useMemo<Value>(
@@ -35,6 +42,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       status,
       getAccessToken: session.getAccessToken,
       renewAccess: () => session.restore().catch(() => false),
+      phone,
       async signIn() {
         try {
           const idToken = await getGoogleIdToken();
@@ -52,7 +60,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         setStatus('signedOut');
       },
     }),
-    [session, status],
+    [session, phone, status],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

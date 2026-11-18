@@ -21,6 +21,45 @@ public sealed class WaypointDb(DbContextOptions<WaypointDb> options, CurrentUser
     public DbSet<PlanTask> PlanTasks => Set<PlanTask>();
     public DbSet<ScheduledAction> ScheduledActions => Set<ScheduledAction>();
     public DbSet<CheckIn> CheckIns => Set<CheckIn>();
+    public DbSet<Change> Changes => Set<Change>();
+
+    public override Task<int> SaveChangesAsync(CancellationToken ct = default)
+    {
+        LogChanges();
+        return base.SaveChangesAsync(ct);
+    }
+
+    public override int SaveChanges() { LogChanges(); return base.SaveChanges(); }
+
+    /// <summary>Notes what the phone must pull, in the same save. Rows changed through ExecuteUpdate call <see cref="Record"/> themselves.</summary>
+    private void LogChanges()
+    {
+        ChangeTracker.DetectChanges();
+        var seen = new HashSet<(string, Guid)>();
+        foreach (var e in ChangeTracker.Entries().Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted).ToList())
+        {
+            var deleted = e.State == EntityState.Deleted;
+            switch (e.Entity)
+            {
+                case ScheduledAction a: Add("scheduled_action", a.UserId, a.Id, deleted); break;
+                case CheckIn c: Add("scheduled_action", c.UserId, c.ScheduledActionId, false); break;
+                case Milestone m: Add("milestone", m.UserId, m.Id, deleted); break;
+                case PlanVersion p: Add("plan_version", p.UserId, p.Id, deleted); break;
+                case ChatMessage m:
+                    Add("chat_message", m.UserId, m.Id, deleted);
+                    // A reply changes whether the message it answers is still waiting.
+                    if (m.InReplyToId is { } answered) Add("chat_message", m.UserId, answered, false);
+                    break;
+            }
+        }
+        void Add(string kind, Guid userId, Guid id, bool deleted)
+        {
+            if (seen.Add((kind, id)) || deleted) Changes.Add(new Change { UserId = userId, Kind = kind, EntityId = id, Deleted = deleted });
+        }
+    }
+
+    /// <summary>For a change made outside the tracker (ExecuteUpdate): saved with the next SaveChanges.</summary>
+    public void Record(string kind, Guid userId, Guid id) => Changes.Add(new Change { UserId = userId, Kind = kind, EntityId = id });
 
     // Read per query by the global filters. Null (no signed-in user) matches nothing.
     private Guid? CurrentUserId => currentUser.Id;
@@ -168,6 +207,16 @@ public sealed class WaypointDb(DbContextOptions<WaypointDb> options, CurrentUser
             e.HasOne<User>().WithMany().HasForeignKey(a => a.UserId);
             e.HasQueryFilter(a => a.UserId == CurrentUserId);
         });
+        b.Entity<Change>(e =>
+        {
+            e.HasKey(c => c.Seq);
+            e.Property(c => c.Seq).ValueGeneratedOnAdd();
+            e.Property(c => c.Kind).HasMaxLength(24);
+            e.HasIndex(c => new { c.UserId, c.Seq });
+            e.HasOne<User>().WithMany().HasForeignKey(c => c.UserId);
+            e.HasQueryFilter(c => c.UserId == CurrentUserId);
+        });
+        b.Entity<ScheduledAction>().Property(a => a.MoveClientIds).HasMaxLength(1024);
         b.Entity<CheckIn>(e =>
         {
             e.Property(c => c.ClientId).HasMaxLength(64);

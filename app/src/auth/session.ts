@@ -16,7 +16,8 @@ export interface ApiAuth {
 
 const REFRESH_KEY = 'refreshToken';
 
-export function createSession(storage: SecureStorage, api: ApiAuth) {
+/** `wipe` clears what the phone keeps for the user (cache and outbox); it runs on every sign-out, online or not. */
+export function createSession(storage: SecureStorage, api: ApiAuth, wipe: () => Promise<void> = async () => {}) {
   let accessToken: string | null = null;
 
   async function adopt(tokens: TokenPair) {
@@ -29,6 +30,11 @@ export function createSession(storage: SecureStorage, api: ApiAuth) {
 
     async signIn(googleIdToken: string) {
       await adopt(await api.signInWithGoogle(googleIdToken));
+    },
+
+    /** True when a refresh token is kept: the phone can start from its cache while the server is out of reach. */
+    async hasStoredSession(): Promise<boolean> {
+      return (await storage.get(REFRESH_KEY)) !== null;
     },
 
     /** Resumes a previous sign-in; true when the phone is signed in afterwards. */
@@ -48,6 +54,7 @@ export function createSession(storage: SecureStorage, api: ApiAuth) {
       const stored = await storage.get(REFRESH_KEY);
       accessToken = null;
       await storage.remove(REFRESH_KEY);
+      await wipe();
       if (stored) {
         try {
           await api.signOut(stored);

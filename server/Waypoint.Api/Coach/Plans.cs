@@ -50,15 +50,17 @@ public static class Plans
         {
             var slots = await db.Slots.ToDictionaryAsync(s => s.Id, ct);
             var checkIns = await db.CheckIns.ToDictionaryAsync(c => c.ScheduledActionId, ct);
-            return Results.Ok((await db.ScheduledActions.OrderBy(a => a.Date).ThenBy(a => a.Title).ToListAsync(ct)).Select(a => new
-            {
-                a.Id, a.AspirationId, a.PlanVersionId, a.Date, Slot = slots.GetValueOrDefault(a.SlotId)?.Label,
-                SlotStart = slots.GetValueOrDefault(a.SlotId)?.Start, SlotEnd = slots.GetValueOrDefault(a.SlotId)?.End,
-                a.Title, a.Minutes,
-                CheckIn = checkIns.TryGetValue(a.Id, out var c) ? CheckIns.View(c) : null,
-            }));
+            return Results.Ok((await db.ScheduledActions.OrderBy(a => a.Date).ThenBy(a => a.Title).ToListAsync(ct))
+                .Select(a => ActionView(a, slots.GetValueOrDefault(a.SlotId), checkIns.GetValueOrDefault(a.Id))));
         });
     }
+
+    public static object ActionView(ScheduledAction a, Slot? slot, CheckIn? checkIn) => new
+    {
+        a.Id, a.AspirationId, a.PlanVersionId, a.Date, SlotId = a.SlotId, Slot = slot?.Label, SlotStart = slot?.Start, SlotEnd = slot?.End,
+        a.Title, a.Minutes,
+        CheckIn = checkIn is null ? null : CheckIns.View(checkIn),
+    };
 
     private static async Task<IResult> Approve(Guid id, WaypointDb db, TimeProvider clock, JobQueue jobs, CancellationToken ct)
     {
@@ -90,8 +92,11 @@ public static class Plans
             version = await RefreshAsync(db, version, ct);
             return version.Status == PlanVersionStatus.Approved ? Results.Ok(await ViewAsync(db, version, ct)) : await StaleAsync(db, version, ct);
         }
-        await db.PlanVersions.Where(p => p.AspirationId == version.AspirationId && p.Id != id && p.Status == PlanVersionStatus.Approved)
+        var supersededIds = await db.PlanVersions.Where(p => p.AspirationId == version.AspirationId && p.Id != id && p.Status == PlanVersionStatus.Approved)
+            .Select(p => p.Id).ToListAsync(ct);
+        await db.PlanVersions.Where(p => supersededIds.Contains(p.Id))
             .ExecuteUpdateAsync(s => s.SetProperty(p => p.Status, PlanVersionStatus.Superseded), ct);
+        foreach (var old in supersededIds) db.Record("plan_version", version.UserId, old);
         version = await RefreshAsync(db, version, ct);
         version.Number = (await db.PlanVersions.Where(p => p.AspirationId == version.AspirationId).MaxAsync(p => p.Number, ct) ?? 0) + 1;
 

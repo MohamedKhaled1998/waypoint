@@ -22,6 +22,7 @@ export type ScheduledActionView = {
   id: string;
   aspirationId: string;
   date: string;
+  slotId?: string | null;
   slot: string | null;
   slotStart: string | null;
   slotEnd: string | null;
@@ -38,6 +39,8 @@ export type TodayModel = {
   nowCard: { kind: 'overdue' | 'next'; action: ScheduledActionView } | null;
   summary: { checkedIn: number; total: number; minutesDone: number; minutesPlanned: number };
   tomorrowFirst: ScheduledActionView | null;
+  /** The last date the cache has Actions for; nothing is planned past it until the phone connects. */
+  plannedUntil: string | null;
 };
 
 const startOf = (a: ScheduledActionView) => a.slotStart ?? '00:00';
@@ -71,6 +74,7 @@ export function buildToday(actions: ScheduledActionView[], now: { date: string; 
       minutesPlanned: timeline.reduce((sum, a) => sum + a.minutes, 0),
     },
     tomorrowFirst: upcoming.find((a) => a.date === tomorrowDate) ?? null,
+    plannedUntil: actions.reduce<string | null>((last, a) => (last === null || a.date > last ? a.date : last), null),
   };
 }
 

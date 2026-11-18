@@ -31,14 +31,16 @@ public static class CoachChat
     {
         var all = await db.ChatMessages.OrderBy(m => m.Seq).ToListAsync(ct);
         var answered = all.Where(m => m.InReplyToId is not null).Select(m => m.InReplyToId!.Value).ToHashSet();
-        return all.Select(m => (object)new
-        {
-            m.Id, m.Role, m.Text, m.AspirationId, m.ClientId, m.Card,
-            CardData = m.CardJson is null ? null : System.Text.Json.Nodes.JsonNode.Parse(m.CardJson),
-            Replied = m.Role != "user" || answered.Contains(m.Id),
-            CreatedAt = DateTime.SpecifyKind(m.CreatedAt, DateTimeKind.Utc),
-        }).ToArray();
+        return all.Select(m => View(m, answered.Contains(m.Id))).ToArray();
     }
+
+    public static object View(ChatMessage m, bool answered) => new
+    {
+        m.Id, m.Role, m.Text, m.AspirationId, m.ClientId, m.Card,
+        CardData = m.CardJson is null ? null : System.Text.Json.Nodes.JsonNode.Parse(m.CardJson),
+        Replied = m.Role != "user" || answered,
+        CreatedAt = DateTime.SpecifyKind(m.CreatedAt, DateTimeKind.Utc),
+    };
 
     private static async Task Send(SendMessageRequest req, HttpContext http, WaypointDb db, CurrentUser me,
         ICoachModelClient model, IOptions<CoachOptions> options, TimeProvider clock, ILoggerFactory logs)

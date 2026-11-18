@@ -47,6 +47,7 @@ export default function PlanReviewScreen() {
       <Stack.Screen options={{ title: t('plan.title') }} />
       <ScrollView contentContainerStyle={styles.pad}>
         {review.outcome === 'redrafting' ? <Banner message={t('plan.redrafting')} /> : null}
+        {review.outcome === 'queued' ? <Banner message={t('plan.approveQueued')} /> : null}
         {review.outcome === 'replaced' ? <Banner message={t('plan.replaced')} /> : null}
         {review.outcome === 'failed' ? <Banner message={t('plan.approveFailed')} /> : null}
         <Card hue={version.hue}>

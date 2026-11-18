@@ -4,7 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { StyleSheet, useUnistyles } from 'react-native-unistyles';
 import { Button } from '../ui/Button';
 import { Text } from '../ui/Text';
-import { FEELING_CHIPS, SKIP_CHIPS, STOPPED_SHORT_CHIPS, createActionSheet, partlyChips } from './sheet';
+import type { SlotView } from './offline';
+import { FEELING_CHIPS, SKIP_CHIPS, STOPPED_SHORT_CHIPS, createActionSheet, moveOptions, partlyChips } from './sheet';
 import type { CheckInRequest, CheckInState, ScheduledActionView } from './today';
 
 type Props = {
@@ -12,6 +13,9 @@ type Props = {
   initialChoice?: CheckInState;
   onClose: () => void;
   onSubmit: (req: CheckInRequest) => Promise<void>;
+  slots: SlotView[];
+  onMove: (date: string, slotId: string) => Promise<void>;
+  now: { date: string; time: string };
 };
 
 function Chip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
@@ -23,12 +27,12 @@ function Chip({ label, selected, onPress }: { label: string; selected: boolean; 
 }
 
 /** The bottom sheet for one Action: step 1 the result tiles, step 2 one optional follow-up. */
-export function ActionSheet({ action, initialChoice, onClose, onSubmit }: Props) {
+export function ActionSheet({ action, ...rest }: Props) {
   if (!action) return null;
-  return <Sheet key={action.id + (initialChoice ?? '')} action={action} initialChoice={initialChoice} onClose={onClose} onSubmit={onSubmit} />;
+  return <Sheet key={action.id + (rest.initialChoice ?? '')} action={action} {...rest} />;
 }
 
-function Sheet({ action, initialChoice, onClose, onSubmit }: Props & { action: ScheduledActionView }) {
+function Sheet({ action, initialChoice, onClose, onSubmit, slots, onMove, now }: Props & { action: ScheduledActionView }) {
   const { t } = useTranslation();
   const { theme } = useUnistyles();
   const sheet = useMemo(() => {
@@ -42,6 +46,8 @@ function Sheet({ action, initialChoice, onClose, onSubmit }: Props & { action: S
     setTick((n) => n + 1);
   };
   const [notToday, setNotToday] = useState(false);
+  const [moving, setMoving] = useState(false);
+  const options = useMemo(() => moveOptions(action, slots, now), [action, slots, now]);
   const [failed, setFailed] = useState(false);
   const s = sheet.state();
   const request = sheet.request(`ci-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`, new Date().toISOString());
@@ -64,7 +70,7 @@ function Sheet({ action, initialChoice, onClose, onSubmit }: Props & { action: S
           <Text variant="heading">{action.title}</Text>
           <Text muted>{t('today.sheet.meta', { time: action.slotStart ?? '', minutes: action.minutes })}</Text>
 
-          {s.step === 1 && !notToday ? (
+          {s.step === 1 && !notToday && !moving ? (
             <>
               <View style={styles.tiles}>
                 {(['done', 'partly', 'skipped'] as const).map((choice) => (
@@ -74,6 +80,30 @@ function Sheet({ action, initialChoice, onClose, onSubmit }: Props & { action: S
                 ))}
               </View>
               <Button kind="quiet" title={t('today.sheet.notToday')} onPress={() => setNotToday(true)} />
+              {!action.checkIn ? <Button kind="quiet" title={t('today.sheet.move')} onPress={() => setMoving(true)} /> : null}
+            </>
+          ) : null}
+
+          {s.step === 1 && moving ? (
+            <>
+              <Text variant="label">{t('today.sheet.moveTitle')}</Text>
+              {options.length === 0 ? <Text muted>{t('today.sheet.moveNone')}</Text> : null}
+              {options.map((o) => (
+                <Button
+                  key={`${o.date}-${o.slotId}`}
+                  kind="secondary"
+                  title={t('today.sheet.moveOption', {
+                    day: new Date(`${o.date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }),
+                    time: o.start,
+                    label: o.label,
+                  })}
+                  onPress={() =>
+                    void onMove(o.date, o.slotId).then(onClose, () => setFailed(true))
+                  }
+                />
+              ))}
+              {failed ? <Text style={styles.care}>{t('today.sheet.failed')}</Text> : null}
+              <Button kind="quiet" title={t('today.sheet.back')} onPress={() => setMoving(false)} />
             </>
           ) : null}
 

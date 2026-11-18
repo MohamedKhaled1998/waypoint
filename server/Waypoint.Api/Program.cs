@@ -102,6 +102,7 @@ app.MapCoachChat();
 app.MapInterviews();
 app.MapPlans();
 app.MapCheckIns();
+app.MapSync();
 
 app.Run();
 

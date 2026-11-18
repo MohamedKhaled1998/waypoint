@@ -40,7 +40,9 @@ export type PlanSummary = {
 
 export type ApproveResult =
   | { kind: 'approved'; version: PlanVersionView }
-  | { kind: 'stale'; newer: PlanVersionView | null; reason?: 'replaced' | 'window_started' };
+  | { kind: 'stale'; newer: PlanVersionView | null; reason?: 'replaced' | 'window_started' }
+  /** Kept on the phone to send when the server is back. */
+  | { kind: 'queued' };
 
 export interface PlanApi {
   get(id: string): Promise<PlanVersionView>;
@@ -53,7 +55,7 @@ export type PlanReviewState = {
   /** Tabs not yet visited, in tab order: each gets a dot. */
   unopened: PlanTab[];
   approving: boolean;
-  outcome: null | 'approved' | 'replaced' | 'redrafting' | 'failed';
+  outcome: null | 'approved' | 'queued' | 'replaced' | 'redrafting' | 'failed';
 };
 
 /** The tabs to name in the "Start this Plan?" confirm. */
@@ -98,6 +100,7 @@ export function createPlanReview(api: PlanApi, versionId: string) {
       try {
         const result = await api.approve(current.id);
         if (result.kind === 'approved') set({ version: result.version, approving: false, outcome: 'approved' });
+        else if (result.kind === 'queued') set({ approving: false, outcome: 'queued' });
         else if (!result.newer) {
           // Its two weeks had started, so the server is drafting a fresh Plan: nothing to review until it arrives.
           set({ approving: false, outcome: 'redrafting' });

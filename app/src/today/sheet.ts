@@ -85,3 +85,36 @@ export function createActionSheet(action: { scheduledActionId: string; minutes: 
     },
   };
 }
+
+export type MoveOption = { date: string; slotId: string; label: string; start: string };
+
+const WEEKDAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+const addDays = (date: string, n: number) => {
+  const d = new Date(`${date}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+
+/**
+ * Where one Action can move to: each Slot on each of its days in the cached two weeks, later than now, other than where
+ * it is. Only Slots the user already has; the phone never invents a time.
+ */
+export function moveOptions(
+  action: { date: string; slotId?: string | null },
+  slots: { id: string; label: string; days: string; start: string }[],
+  now: { date: string; time: string },
+  days = 14,
+): MoveOption[] {
+  const options: MoveOption[] = [];
+  for (let i = 0; i < days; i++) {
+    const date = addDays(now.date, i);
+    const weekday = WEEKDAYS[new Date(`${date}T12:00:00Z`).getUTCDay()]!;
+    for (const slot of [...slots].sort((a, b) => a.start.localeCompare(b.start))) {
+      if (!slot.days.split(',').includes(weekday)) continue;
+      if (date === now.date && slot.start <= now.time) continue;
+      if (date === action.date && slot.id === action.slotId) continue;
+      options.push({ date, slotId: slot.id, label: slot.label, start: slot.start });
+    }
+  }
+  return options;
+}

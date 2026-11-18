@@ -227,6 +227,22 @@ public sealed class ScheduledAction
     public Guid SlotId { get; set; }
     public required string Title { get; set; }
     public int Minutes { get; set; }
+    /// <summary>Comma-separated client IDs of the latest moves, so a replayed move is idempotent.</summary>
+    public string? MoveClientIds { get; set; }
+}
+
+/// <summary>
+/// One entry in the user's change log: something the phone should pull. <see cref="Seq"/> is the sync cursor.
+/// Written by <c>WaypointDb.SaveChanges</c> in the same transaction as the change itself. User-owned.
+/// </summary>
+public sealed class Change
+{
+    public long Seq { get; set; }
+    public Guid UserId { get; set; }
+    /// <summary>scheduled_action, milestone, chat_message or plan_version.</summary>
+    public required string Kind { get; set; }
+    public Guid EntityId { get; set; }
+    public bool Deleted { get; set; }
 }
 
 public static class CheckInState
