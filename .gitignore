@@ -1,0 +1,10 @@
+bin/
+obj/
+node_modules/
+android/
+ios/
+.expo/
+dist/
+.env
+*.keystore
+.sandcastle-*.md

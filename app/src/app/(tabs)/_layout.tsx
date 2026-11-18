@@ -1,0 +1,50 @@
+import { Ionicons } from '@expo/vector-icons';
+import { Tabs, useRouter } from 'expo-router';
+import { useTranslation } from 'react-i18next';
+import { useUnistyles } from 'react-native-unistyles';
+import { HeaderButton } from '../../ui/HeaderButton';
+
+export default function TabsLayout() {
+  const { t } = useTranslation();
+  const { theme } = useUnistyles();
+  const router = useRouter();
+  return (
+    <Tabs
+      screenOptions={{
+        headerStyle: { backgroundColor: theme.colors.background },
+        headerTintColor: theme.colors.text,
+        headerShadowVisible: false,
+        headerTitleStyle: { fontWeight: '800' },
+        headerRight: () => (
+          <HeaderButton icon="settings-outline" label={t('settings.open')} onPress={() => router.push('/settings')} />
+        ),
+        tabBarActiveTintColor: theme.colors.accent,
+        tabBarInactiveTintColor: theme.colors.textMuted,
+        tabBarStyle: { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.border, borderTopWidth: 1 },
+        sceneStyle: { backgroundColor: theme.colors.background },
+      }}
+    >
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: t('tabs.today'),
+          tabBarIcon: ({ focused, size }) => <Ionicons name="today-outline" color={focused ? theme.colors.accent : theme.colors.textMuted} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="progress"
+        options={{
+          title: t('tabs.progress'),
+          tabBarIcon: ({ focused, size }) => <Ionicons name="stats-chart-outline" color={focused ? theme.colors.accent : theme.colors.textMuted} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="coach"
+        options={{
+          title: t('tabs.coach'),
+          tabBarIcon: ({ focused, size }) => <Ionicons name="chatbubble-outline" color={focused ? theme.colors.accent : theme.colors.textMuted} size={size} />,
+        }}
+      />
+    </Tabs>
+  );
+}

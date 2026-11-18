@@ -1,0 +1,32 @@
+services:
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: waypoint
+      MYSQL_USER: waypoint
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env}
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build: ./server/Waypoint.Api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ConnectionStrings__Waypoint: "Server=db;Database=waypoint;User=waypoint;Password=${MYSQL_PASSWORD}"
+      Jwt__Key: ${JWT_KEY:?set JWT_KEY in .env (32+ random characters)}
+      Google__ClientIds__0: ${GOOGLE_WEB_CLIENT_ID:?set GOOGLE_WEB_CLIENT_ID in .env}
+    ports:
+      - "8080:8080"
+
+volumes:
+  db-data:

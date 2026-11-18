@@ -1,0 +1,100 @@
+import { createSession, type SecureStorage, type ApiAuth } from './session';
+
+class MemoryStorage implements SecureStorage {
+  items = new Map<string, string>();
+  async get(key: string) {
+    return this.items.get(key) ?? null;
+  }
+  async set(key: string, value: string) {
+    this.items.set(key, value);
+  }
+  async remove(key: string) {
+    this.items.delete(key);
+  }
+}
+
+function fakeApi(): ApiAuth & { issued: number; revoked: string[] } {
+  const api = {
+    issued: 0,
+    revoked: [] as string[],
+    async signInWithGoogle(idToken: string) {
+      if (idToken !== 'good') throw new Error('rejected');
+      api.issued += 1;
+      return { accessToken: `access-${api.issued}`, refreshToken: `refresh-${api.issued}` };
+    },
+    async refresh(refreshToken: string) {
+      if (refreshToken !== `refresh-${api.issued}`) return null;
+      api.issued += 1;
+      return { accessToken: `access-${api.issued}`, refreshToken: `refresh-${api.issued}` };
+    },
+    async signOut(refreshToken: string) {
+      api.revoked.push(refreshToken);
+    },
+  };
+  return api;
+}
+
+describe('session', () => {
+  it('signing in keeps the refresh token in secure storage and the access token in memory', async () => {
+    const storage = new MemoryStorage();
+    const session = createSession(storage, fakeApi());
+    await session.signIn('good');
+    expect(session.getAccessToken()).toBe('access-1');
+    expect(await storage.get('refreshToken')).toBe('refresh-1');
+  });
+
+  it('a rejected Google token leaves the phone signed out', async () => {
+    const storage = new MemoryStorage();
+    const session = createSession(storage, fakeApi());
+    await expect(session.signIn('bad')).rejects.toThrow();
+    expect(session.getAccessToken()).toBeNull();
+    expect(await storage.get('refreshToken')).toBeNull();
+  });
+
+  it('restoring after a restart rotates the stored refresh token', async () => {
+    const storage = new MemoryStorage();
+    const api = fakeApi();
+    await createSession(storage, api).signIn('good');
+
+    const restarted = createSession(storage, api);
+    expect(await restarted.restore()).toBe(true);
+    expect(restarted.getAccessToken()).toBe('access-2');
+    expect(await storage.get('refreshToken')).toBe('refresh-2');
+  });
+
+  it('restoring with a refresh token the server no longer accepts signs out and wipes it', async () => {
+    const storage = new MemoryStorage();
+    await storage.set('refreshToken', 'stale');
+    const session = createSession(storage, fakeApi());
+    expect(await session.restore()).toBe(false);
+    expect(await storage.get('refreshToken')).toBeNull();
+  });
+
+  it('restoring with nothing stored is signed out', async () => {
+    const session = createSession(new MemoryStorage(), fakeApi());
+    expect(await session.restore()).toBe(false);
+  });
+
+  it('signing out revokes on the server and wipes the refresh token', async () => {
+    const storage = new MemoryStorage();
+    const api = fakeApi();
+    const session = createSession(storage, api);
+    await session.signIn('good');
+    await session.signOut();
+    expect(api.revoked).toEqual(['refresh-1']);
+    expect(await storage.get('refreshToken')).toBeNull();
+    expect(session.getAccessToken()).toBeNull();
+  });
+
+  it('signing out still wipes the phone when the server is unreachable', async () => {
+    const storage = new MemoryStorage();
+    const api = fakeApi();
+    api.signOut = async () => {
+      throw new Error('offline');
+    };
+    const session = createSession(storage, api);
+    await session.signIn('good');
+    await session.signOut();
+    expect(await storage.get('refreshToken')).toBeNull();
+  });
+});
