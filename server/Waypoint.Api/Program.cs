@@ -24,6 +24,7 @@ builder.Services.AddHttpClient<ICoachModelClient, AnthropicCoachModelClient>(c =
 
 builder.Services.AddScoped<JobQueue>();
 builder.Services.AddScoped<PlanDrafter>();
+builder.Services.AddScoped<CheckInReplies>();
 builder.Services.AddSingleton<JobRunner>();
 if (builder.Configuration.GetValue("Jobs:Worker:Enabled", true)) builder.Services.AddHostedService<JobWorker>();
 
@@ -100,6 +101,7 @@ app.MapGet("/me/sessions", async (TimeProvider clock, WaypointDb db, Cancellatio
 app.MapCoachChat();
 app.MapInterviews();
 app.MapPlans();
+app.MapCheckIns();
 
 app.Run();
 

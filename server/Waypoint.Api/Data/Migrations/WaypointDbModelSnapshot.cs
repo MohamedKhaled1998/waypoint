@@ -134,6 +134,57 @@ namespace Waypoint.Api.Data.Migrations
                     b.ToTable("ChatMessages");
                 });
 
+            modelBuilder.Entity("Waypoint.Api.Data.CheckIn", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("ClientId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<Guid>("EchoMessageId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<int?>("MinutesSpent")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("Reasons")
+                        .HasMaxLength(256)
+                        .HasColumnType("varchar(256)");
+
+                    b.Property<Guid>("ScheduledActionId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("varchar(8)");
+
+                    b.Property<DateTime>("TappedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("char(36)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ScheduledActionId");
+
+                    b.HasIndex("UserId", "ClientId")
+                        .IsUnique();
+
+                    b.HasIndex("UserId", "ScheduledActionId")
+                        .IsUnique();
+
+                    b.ToTable("CheckIns");
+                });
+
             modelBuilder.Entity("Waypoint.Api.Data.Habit", b =>
                 {
                     b.Property<Guid>("Id")
@@ -608,6 +659,21 @@ namespace Waypoint.Api.Data.Migrations
 
             modelBuilder.Entity("Waypoint.Api.Data.ChatMessage", b =>
                 {
+                    b.HasOne("Waypoint.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Waypoint.Api.Data.CheckIn", b =>
+                {
+                    b.HasOne("Waypoint.Api.Data.ScheduledAction", null)
+                        .WithMany()
+                        .HasForeignKey("ScheduledActionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
                     b.HasOne("Waypoint.Api.Data.User", null)
                         .WithMany()
                         .HasForeignKey("UserId")

@@ -18,7 +18,6 @@ const REFRESH_KEY = 'refreshToken';
 
 export function createSession(storage: SecureStorage, api: ApiAuth) {
   let accessToken: string | null = null;
-  let renewing: Promise<boolean> | null = null;
 
   async function adopt(tokens: TokenPair) {
     accessToken = tokens.accessToken;
@@ -32,28 +31,17 @@ export function createSession(storage: SecureStorage, api: ApiAuth) {
       await adopt(await api.signInWithGoogle(googleIdToken));
     },
 
-    /**
-     * Trades the stored refresh token for new tokens: on launch, and after a 401. True when the
-     * phone is signed in afterwards; false (and wiped) when the server rejects the token; throws
-     * when the server can't be reached. Concurrent calls share one refresh, because the server
-     * rotates the token and treats a second use of the old one as theft.
-     */
-    renew(): Promise<boolean> {
-      renewing ??= (async () => {
-        const stored = await storage.get(REFRESH_KEY);
-        if (!stored) return false;
-        const tokens = await api.refresh(stored);
-        if (!tokens) {
-          accessToken = null;
-          await storage.remove(REFRESH_KEY);
-          return false;
-        }
-        await adopt(tokens);
-        return true;
-      })().finally(() => {
-        renewing = null;
-      });
-      return renewing;
+    /** Resumes a previous sign-in; true when the phone is signed in afterwards. */
+    async restore(): Promise<boolean> {
+      const stored = await storage.get(REFRESH_KEY);
+      if (!stored) return false;
+      const tokens = await api.refresh(stored);
+      if (!tokens) {
+        await storage.remove(REFRESH_KEY);
+        return false;
+      }
+      await adopt(tokens);
+      return true;
     },
 
     async signOut() {

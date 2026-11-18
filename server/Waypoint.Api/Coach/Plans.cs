@@ -42,16 +42,20 @@ public static class Plans
         {
             if (!await db.Aspirations.AnyAsync(a => a.Id == id && a.Status != "closed", ct)) return Results.NotFound();
             if (!await db.Jobs.AnyAsync(j => j.Kind == JobKinds.Plan && j.AspirationId == id && j.State == JobState.Pending, ct))
-                await jobs.EnqueueAsync(JobKinds.Plan, me.Id!.Value, new Dictionary<string, Guid> { ["aspirationId"] = id }, id, ct);
+                await jobs.EnqueueAsync(JobKinds.Plan, me.Id!.Value, new Dictionary<string, Guid> { ["aspirationId"] = id }, id, ct: ct);
             return Results.Accepted();
         });
 
         g.MapGet("/scheduled-actions", async (WaypointDb db, CancellationToken ct) =>
         {
-            var slots = await db.Slots.ToDictionaryAsync(s => s.Id, s => s.Label, ct);
+            var slots = await db.Slots.ToDictionaryAsync(s => s.Id, ct);
+            var checkIns = await db.CheckIns.ToDictionaryAsync(c => c.ScheduledActionId, ct);
             return Results.Ok((await db.ScheduledActions.OrderBy(a => a.Date).ThenBy(a => a.Title).ToListAsync(ct)).Select(a => new
             {
-                a.Id, a.AspirationId, a.PlanVersionId, a.Date, Slot = slots.GetValueOrDefault(a.SlotId), a.Title, a.Minutes,
+                a.Id, a.AspirationId, a.PlanVersionId, a.Date, Slot = slots.GetValueOrDefault(a.SlotId)?.Label,
+                SlotStart = slots.GetValueOrDefault(a.SlotId)?.Start, SlotEnd = slots.GetValueOrDefault(a.SlotId)?.End,
+                a.Title, a.Minutes,
+                CheckIn = checkIns.TryGetValue(a.Id, out var c) ? CheckIns.View(c) : null,
             }));
         });
     }
@@ -72,7 +76,7 @@ public static class Plans
                 .ExecuteUpdateAsync(s => s.SetProperty(p => p.Status, PlanVersionStatus.Replaced), ct);
             if (replaced == 0) return await StaleAsync(db, await RefreshAsync(db, version, ct), ct);
             if (!await db.Jobs.AnyAsync(j => j.Kind == JobKinds.Plan && j.AspirationId == version.AspirationId && j.State == JobState.Pending, ct))
-                await jobs.EnqueueAsync(JobKinds.Plan, version.UserId, new Dictionary<string, Guid> { ["aspirationId"] = version.AspirationId }, version.AspirationId, ct);
+                await jobs.EnqueueAsync(JobKinds.Plan, version.UserId, new Dictionary<string, Guid> { ["aspirationId"] = version.AspirationId }, version.AspirationId, ct: ct);
             return Results.Conflict(new { error = "stale", reason = "window_started", newer = (PlanVersionView?)null });
         }
 

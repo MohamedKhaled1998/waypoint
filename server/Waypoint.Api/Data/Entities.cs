@@ -228,3 +228,30 @@ public sealed class ScheduledAction
     public required string Title { get; set; }
     public int Minutes { get; set; }
 }
+
+public static class CheckInState
+{
+    public const string Done = "done";
+    public const string Partly = "partly";
+    public const string Skipped = "skipped";
+    public static bool IsValid(string? s) => s is Done or Partly or Skipped;
+}
+
+/// <summary>The user's report on one scheduled Action. At most one per Action: a later tap replaces it. User-owned.</summary>
+public sealed class CheckIn
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    public Guid ScheduledActionId { get; set; }
+    /// <summary>Set by the phone; the latest tap's ID, so a resend is idempotent.</summary>
+    public required string ClientId { get; set; }
+    public required string State { get; set; }
+    /// <summary>Minutes actually spent; required for partly.</summary>
+    public int? MinutesSpent { get; set; }
+    /// <summary>Comma-separated reason chip codes.</summary>
+    public string? Reasons { get; set; }
+    public string? Note { get; set; }
+    public DateTime TappedAt { get; set; }
+    /// <summary>The chat message that echoes this Check-in.</summary>
+    public Guid EchoMessageId { get; set; }
+}

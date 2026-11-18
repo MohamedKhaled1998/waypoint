@@ -8,26 +8,27 @@ namespace Waypoint.Api.Coach;
 public static class JobKinds
 {
     public const string Plan = "plan";
+    public const string CheckInReply = "check_in_reply";
 }
 
 /// <summary>Adds jobs. Payloads are row IDs only, so no free text can reach the jobs table.</summary>
 public sealed class JobQueue(WaypointDb db, TimeProvider clock)
 {
-    public Job Add(string kind, Guid userId, IReadOnlyDictionary<string, Guid> ids, Guid? aspirationId = null)
+    public Job Add(string kind, Guid userId, IReadOnlyDictionary<string, Guid> ids, Guid? aspirationId = null, TimeSpan? delay = null)
     {
         var now = clock.GetUtcNow().UtcDateTime;
         var job = new Job
         {
-            Id = Guid.NewGuid(), UserId = userId, Kind = kind, AspirationId = aspirationId, State = JobState.Pending, NextRunAt = now, CreatedAt = now,
+            Id = Guid.NewGuid(), UserId = userId, Kind = kind, AspirationId = aspirationId, State = JobState.Pending, NextRunAt = now + (delay ?? TimeSpan.Zero), CreatedAt = now,
             PayloadJson = JsonSerializer.Serialize(ids.ToDictionary(p => p.Key, p => p.Value.ToString())),
         };
         db.Jobs.Add(job);
         return job;
     }
 
-    public async Task EnqueueAsync(string kind, Guid userId, IReadOnlyDictionary<string, Guid> ids, Guid? aspirationId = null, CancellationToken ct = default)
+    public async Task EnqueueAsync(string kind, Guid userId, IReadOnlyDictionary<string, Guid> ids, Guid? aspirationId = null, TimeSpan? delay = null, CancellationToken ct = default)
     {
-        Add(kind, userId, ids, aspirationId);
+        Add(kind, userId, ids, aspirationId, delay);
         await db.SaveChangesAsync(ct);
     }
 }
@@ -71,6 +72,9 @@ public sealed class JobRunner(IServiceScopeFactory scopes, TimeProvider clock, I
             {
                 case JobKinds.Plan:
                     await sp.GetRequiredService<PlanDrafter>().DraftAsync(ids["aspirationId"], ct);
+                    break;
+                case JobKinds.CheckInReply:
+                    await sp.GetRequiredService<CheckInReplies>().ReplyAsync(ids["checkInId"], ct);
                     break;
                 default:
                     throw new InvalidOperationException("unknown_job_kind");

@@ -20,6 +20,7 @@ public sealed class WaypointDb(DbContextOptions<WaypointDb> options, CurrentUser
     public DbSet<Habit> Habits => Set<Habit>();
     public DbSet<PlanTask> PlanTasks => Set<PlanTask>();
     public DbSet<ScheduledAction> ScheduledActions => Set<ScheduledAction>();
+    public DbSet<CheckIn> CheckIns => Set<CheckIn>();
 
     // Read per query by the global filters. Null (no signed-in user) matches nothing.
     private Guid? CurrentUserId => currentUser.Id;
@@ -166,6 +167,18 @@ public sealed class WaypointDb(DbContextOptions<WaypointDb> options, CurrentUser
             e.HasOne<Slot>().WithMany().HasForeignKey(a => a.SlotId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne<User>().WithMany().HasForeignKey(a => a.UserId);
             e.HasQueryFilter(a => a.UserId == CurrentUserId);
+        });
+        b.Entity<CheckIn>(e =>
+        {
+            e.Property(c => c.ClientId).HasMaxLength(64);
+            e.Property(c => c.State).HasMaxLength(8);
+            e.Property(c => c.Reasons).HasMaxLength(256);
+            e.Property(c => c.Note).HasColumnType("longtext");
+            e.HasIndex(c => new { c.UserId, c.ClientId }).IsUnique();
+            e.HasIndex(c => new { c.UserId, c.ScheduledActionId }).IsUnique();
+            e.HasOne<ScheduledAction>().WithMany().HasForeignKey(c => c.ScheduledActionId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<User>().WithMany().HasForeignKey(c => c.UserId);
+            e.HasQueryFilter(c => c.UserId == CurrentUserId);
         });
     }
 }
