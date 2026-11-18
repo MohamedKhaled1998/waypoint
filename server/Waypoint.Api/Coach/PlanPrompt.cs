@@ -21,6 +21,9 @@ public static class PlanPrompt
         - Tasks: one-off Actions that belong to a Milestone, with minutes and a date or "this_week".
         - Rolling window: lay out concrete Actions only for the first two weeks from the start date. Later Milestones
           are just a date and a "reached when" line for now.
+        - Reminders: each Action gets one reminder. "now" (the default) fires at the Slot's start; use "get_ready"
+          with lead_minutes (default 60) only when the user needs time to prepare, such as packing a bag or shopping.
+          Leave lead_minutes out for "now".
         - Ramp: the first two weeks use about 60-70% of this Aspiration's share of the Time budget, not the full
           share. Say how it steps up: one notch per weekly refresh while the last two weeks were mostly done,
           stopping at the full share.
@@ -47,7 +50,7 @@ public static class PlanPrompt
           "habits": [{ "title": "", "times_per_week": 0, "minutes": 0, "slots": ["slot label"] }],
           "tasks": [{ "title": "", "milestone": "m1", "minutes": 0, "due": "YYYY-MM-DD | this_week" }],
           "first_two_weeks": [
-            { "date": "YYYY-MM-DD", "slot": "slot label", "action": "title of a habit or task", "kind": "habit | task", "minutes": 0 }
+            { "date": "YYYY-MM-DD", "slot": "slot label", "action": "title of a habit or task", "kind": "habit | task", "minutes": 0, "reminder": "now | get_ready", "lead_minutes": 60 }
           ],
           "ramp": "how it steps up from here",
           "assumptions": []

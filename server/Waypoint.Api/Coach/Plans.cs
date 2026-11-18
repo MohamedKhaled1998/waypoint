@@ -46,6 +46,7 @@ public static class Plans
             return Results.Accepted();
         });
 
+        g.MapPut("/scheduled-actions/{id:guid}/reminder", SetReminder);
         g.MapGet("/scheduled-actions", async (WaypointDb db, CancellationToken ct) =>
         {
             var slots = await db.Slots.ToDictionaryAsync(s => s.Id, ct);
@@ -59,6 +60,7 @@ public static class Plans
     {
         a.Id, a.AspirationId, a.PlanVersionId, a.Date, SlotId = a.SlotId, Slot = slot?.Label, SlotStart = slot?.Start, SlotEnd = slot?.End,
         a.Title, a.Minutes,
+        ReminderKind = a.ReminderKind, ReminderLeadMinutes = a.ReminderLeadMinutes, ReminderText = a.ReminderText, ReminderOn = a.ReminderOn,
         CheckIn = checkIn is null ? null : CheckIns.View(checkIn),
     };
 
@@ -109,11 +111,39 @@ public static class Plans
                 HabitId = Ref(a, "habitId"), TaskId = Ref(a, "taskId"), SlotId = Ref(a, "slotId")!.Value,
                 Date = PlanRules.ParseDate(HandOff.Str(a, "date"))!.Value, Title = HandOff.Str(a, "action")!,
                 Minutes = (int)HandOff.Num(a, "minutes")!.Value,
+                ReminderKind = HandOff.Str(a, "reminder") == ReminderKinds.GetReady ? ReminderKinds.GetReady : ReminderKinds.Now,
+                ReminderLeadMinutes = HandOff.Str(a, "reminder") == ReminderKinds.GetReady ? LeadFrom(a) : null,
             });
         }
+        // The reminder text is written after approval, so a slow or failing model never holds up the Plan.
+        jobs.Add(JobKinds.ReminderText, version.UserId, new Dictionary<string, Guid> { ["planVersionId"] = id }, version.AspirationId);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return Results.Ok(await ViewAsync(db, version, ct));
+    }
+
+    private static int LeadFrom(JsonObject a)
+    {
+        var lead = HandOff.Num(a, "lead_minutes");
+        return lead is > 0 and <= ReminderKinds.MaxLeadMinutes ? (int)lead.Value : ReminderKinds.DefaultLeadMinutes;
+    }
+
+    public sealed record ReminderRequest(string? Kind, int? LeadMinutes, bool? On);
+
+    /// <summary>The user edits one Action's reminder: its kind and lead time, or switches it off.</summary>
+    private static async Task<IResult> SetReminder(Guid id, ReminderRequest req, WaypointDb db, CancellationToken ct)
+    {
+        if (req.On is null || req.Kind is not (ReminderKinds.Now or ReminderKinds.GetReady)) return Results.BadRequest();
+        if (req.Kind == ReminderKinds.GetReady && req.LeadMinutes is not (> 0 and <= ReminderKinds.MaxLeadMinutes)) return Results.BadRequest();
+        var action = await db.ScheduledActions.FirstOrDefaultAsync(a => a.Id == id, ct);
+        if (action is null) return Results.NotFound();
+        action.ReminderKind = req.Kind;
+        action.ReminderLeadMinutes = req.Kind == ReminderKinds.GetReady ? req.LeadMinutes : null;
+        action.ReminderOn = req.On.Value;
+        await db.SaveChangesAsync(ct);
+        var slot = await db.Slots.FirstOrDefaultAsync(s => s.Id == action.SlotId, ct);
+        var checkIn = await db.CheckIns.FirstOrDefaultAsync(c => c.ScheduledActionId == id, ct);
+        return Results.Ok(ActionView(action, slot, checkIn));
     }
 
     private static Guid? Ref(JsonObject a, string name) => Guid.TryParse(HandOff.Str(a, name), out var g) ? g : null;

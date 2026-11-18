@@ -29,6 +29,12 @@ export type ScheduledActionView = {
   title: string;
   minutes: number;
   checkIn: CheckInView | null;
+  /** now: at the Slot's start; get_ready: once, `reminderLeadMinutes` ahead. */
+  reminderKind?: 'now' | 'get_ready';
+  reminderLeadMinutes?: number | null;
+  /** Written ahead by the server, so a reminder needs no model call. Null until it arrives. */
+  reminderText?: string | null;
+  reminderOn?: boolean;
 };
 
 export type TodayModel = {

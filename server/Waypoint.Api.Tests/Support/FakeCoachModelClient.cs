@@ -14,11 +14,22 @@ public sealed class FakeCoachModelClient : ICoachModelClient
     public Queue<string[]> Script { get; } = new();
     public void Enqueue(params string[] chunks) => Script.Enqueue(chunks);
 
+    /// <summary>Answers a request itself when it returns chunks, before <see cref="Script"/>; for tests with many jobs in flight.</summary>
+    public Func<CoachRequest, string[]?>? Responder { get; set; } = ReminderTextFor;
+
+    /// <summary>The default responder: every reminder batch gets text for each Action in it, so those jobs never eat a scripted reply.</summary>
+    public static string[]? ReminderTextFor(CoachRequest req)
+    {
+        if (req.Kind != CoachCallKind.ReminderText) return null;
+        var ids = System.Text.Json.JsonDocument.Parse(req.Turns[0].Text).RootElement.GetProperty("actions").EnumerateArray().Select(a => a.GetProperty("id").GetString());
+        return ["```json\n" + System.Text.Json.JsonSerializer.Serialize(new { reminders = ids.Select(id => new { id, text = "Easy run: shoes by the door." }) }) + "\n```"];
+    }
+
     public async IAsyncEnumerable<string> StreamAsync(CoachRequest request, [EnumeratorCancellation] CancellationToken ct)
     {
         Requests.Add(request);
         if (Fail) throw new InvalidOperationException("provider down");
-        var chunks = Script.Count > 0 ? Script.Dequeue() : Chunks.ToArray();
+        var chunks = Responder?.Invoke(request) ?? (Script.Count > 0 ? Script.Dequeue() : Chunks.ToArray());
         foreach (var chunk in chunks)
         {
             await Task.Yield();

@@ -217,6 +217,9 @@ public sealed class WaypointDb(DbContextOptions<WaypointDb> options, CurrentUser
             e.HasQueryFilter(c => c.UserId == CurrentUserId);
         });
         b.Entity<ScheduledAction>().Property(a => a.MoveClientIds).HasMaxLength(1024);
+        b.Entity<ScheduledAction>().Property(a => a.ReminderKind).HasMaxLength(16);
+        b.Entity<ScheduledAction>().Property(a => a.ReminderText).HasMaxLength(300);
+        b.Entity<ScheduledAction>().Property(a => a.ReminderOn).HasDefaultValue(true);
         b.Entity<CheckIn>(e =>
         {
             e.Property(c => c.ClientId).HasMaxLength(64);

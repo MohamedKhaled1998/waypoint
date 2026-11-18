@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet } from 'react-native-unistyles';
 import { useUnfinishedInterview } from '../../interview/useInterview';
@@ -23,6 +23,16 @@ export default function TodayScreen() {
   const { plans } = usePlanSummaries();
   const { actions, slots, loaded, task, undo, failed, move } = useToday();
   const [sheet, setSheet] = useState<{ action: ScheduledActionView; choice?: CheckInState } | null>(null);
+
+  // A reminder tap lands here with that Action's sheet open.
+  const { action: tappedId } = useLocalSearchParams<{ action?: string }>();
+  // Opened once per tap, then the param is cleared so a later cache change cannot reopen it.
+  useEffect(() => {
+    const tapped = tappedId ? actionById(actions, tappedId) : undefined;
+    if (!tapped) return;
+    setSheet({ action: tapped });
+    router.setParams({ action: undefined });
+  }, [tappedId, actions, router]);
 
   const now = localNow();
   const today = buildToday(actions, now);

@@ -1,10 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet } from 'react-native-unistyles';
 import { LANDING_TAB, TALK_IT_THROUGH_ROUTE, confirmModel, tabBar, type PlanTab, type PlanVersionView } from '../plan/review';
 import { usePlanReview } from '../plan/usePlan';
+import { askedFlag, phonePermissions } from '../reminders/native';
+import { askOnceAfterFirstPlan } from '../reminders/permissions';
+import { rearmReminders } from '../reminders/rearm';
 import { Banner } from '../ui/Banner';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
@@ -18,6 +21,12 @@ export default function PlanReviewScreen() {
   const [tab, setTab] = useState<PlanTab>(LANDING_TAB);
   const [confirming, setConfirming] = useState(false);
   const version = review.version;
+
+  // Right after the first Plan is approved, once: notifications, then exact alarms, one at a time, each with its reason.
+  const outcome = review.outcome;
+  useEffect(() => {
+    if (outcome === 'approved') void askOnceAfterFirstPlan(phonePermissions, askedFlag).then(() => rearmReminders()).catch(() => console.warn('reminders: arming failed'));
+  }, [outcome]);
 
   const show = (next: PlanTab) => {
     setTab(next);

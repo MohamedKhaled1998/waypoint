@@ -586,6 +586,23 @@ namespace Waypoint.Api.Data.Migrations
                     b.Property<Guid>("PlanVersionId")
                         .HasColumnType("char(36)");
 
+                    b.Property<string>("ReminderKind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("varchar(16)");
+
+                    b.Property<int?>("ReminderLeadMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("ReminderOn")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("tinyint(1)")
+                        .HasDefaultValue(true);
+
+                    b.Property<string>("ReminderText")
+                        .HasMaxLength(300)
+                        .HasColumnType("varchar(300)");
+
                     b.Property<Guid>("SlotId")
                         .HasColumnType("char(36)");
 

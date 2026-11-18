@@ -229,6 +229,21 @@ public sealed class ScheduledAction
     public int Minutes { get; set; }
     /// <summary>Comma-separated client IDs of the latest moves, so a replayed move is idempotent.</summary>
     public string? MoveClientIds { get; set; }
+    /// <summary><see cref="ReminderKinds.Now"/> at the Slot's start, or <see cref="ReminderKinds.GetReady"/> a lead ahead.</summary>
+    public string ReminderKind { get; set; } = ReminderKinds.Now;
+    /// <summary>Minutes before the Slot's start for a get-ready reminder; null for a "now" one.</summary>
+    public int? ReminderLeadMinutes { get; set; }
+    /// <summary>Written ahead by the light model, so a reminder needs no model call. Null until written.</summary>
+    public string? ReminderText { get; set; }
+    public bool ReminderOn { get; set; } = true;
+}
+
+public static class ReminderKinds
+{
+    public const string Now = "now";
+    public const string GetReady = "get_ready";
+    public const int DefaultLeadMinutes = 60;
+    public const int MaxLeadMinutes = 24 * 60;
 }
 
 /// <summary>

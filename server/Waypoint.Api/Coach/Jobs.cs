@@ -9,6 +9,7 @@ public static class JobKinds
 {
     public const string Plan = "plan";
     public const string CheckInReply = "check_in_reply";
+    public const string ReminderText = "reminder_text";
 }
 
 /// <summary>Adds jobs. Payloads are row IDs only, so no free text can reach the jobs table.</summary>
@@ -75,6 +76,9 @@ public sealed class JobRunner(IServiceScopeFactory scopes, TimeProvider clock, I
                     break;
                 case JobKinds.CheckInReply:
                     await sp.GetRequiredService<CheckInReplies>().ReplyAsync(ids["checkInId"], ct);
+                    break;
+                case JobKinds.ReminderText:
+                    await sp.GetRequiredService<ReminderWriter>().WriteAsync(ids["planVersionId"], ct);
                     break;
                 default:
                     throw new InvalidOperationException("unknown_job_kind");

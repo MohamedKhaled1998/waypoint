@@ -169,5 +169,27 @@ export const en = {
     failed: 'We could not sign you in. Please try again.',
     offline: 'Waypoint could not reach the server. Check your connection and try again.',
   },
+  reminders: {
+    channel: 'Reminders',
+    done: 'Done',
+    partly: 'Partly',
+    skip: 'Skip',
+    partlySubmit: 'Send',
+    partlyPlaceholder: 'Minutes you did',
+    permission: {
+      notNow: 'Not now',
+      allow: 'Continue',
+      notifications: {
+        title: 'Let Waypoint remind you?',
+        why: 'Each Action gets one reminder, with Done · Partly · Skip right in the notification.',
+        without: 'Without notifications, nothing will tell you when an Action is due.',
+      },
+      exactAlarms: {
+        title: 'Allow exact reminders?',
+        why: 'Allowing "Alarms & reminders" lets each reminder arrive right on time.',
+        without: 'Without it, reminders still arrive, but up to about an hour late.',
+      },
+    },
+  },
   common: { loading: 'Loading…' },
 } as const;

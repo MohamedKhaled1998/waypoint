@@ -7,7 +7,12 @@
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "android": {
-      "package": "app.waypoint"
+      "package": "app.waypoint",
+      "permissions": [
+        "SCHEDULE_EXACT_ALARM",
+        "RECEIVE_BOOT_COMPLETED",
+        "POST_NOTIFICATIONS"
+      ]
     },
     "plugins": [
       "expo-router",
@@ -23,6 +28,7 @@
           }
         }
       ],
+      "expo-notifications",
       "expo-font"
     ],
     "experiments": {
