@@ -1,0 +1,39 @@
+{
+  "aspiration": {
+    "aspiration": "get stronger and eat better",
+    "success_looks_like": "Lifting three times a week without thinking about it, cooking most weekday lunches, and losing a bit of the belly",
+    "starting_point": "Desk job, walks the dog daily, did gym classes years ago",
+    "domain_picture": {
+      "about": "34-year-old man, 1.78 m, 88 kg",
+      "routine": "Skips breakfast, buys lunch near the office most days, cooks dinner three or four nights",
+      "skill": "Cooks simple pasta and stir-fries; has never followed a lifting program; knows squats and push-ups from classes",
+      "limits": "Home only: a pair of adjustable dumbbells up to 20 kg each and a bench; no allergies; 90 minutes on Sunday for meal prep",
+      "likes": "Spicy food, chicken, rice, eggs; likes short workouts",
+      "dislikes": "Fish, cottage cheese, running; hates long recipes with many pans"
+    },
+    "open_questions": []
+  },
+  "actions": [
+    {
+      "title": "Sunday meal prep: weekday lunches",
+      "kind": "habit",
+      "minutes": 90,
+      "cadence": "1\u00d7 a week"
+    },
+    {
+      "title": "Strength session at home",
+      "kind": "habit",
+      "minutes": 35,
+      "cadence": "3\u00d7 a week"
+    }
+  ],
+  "week_one_checkins": "Strength: done, done, done. Replies: 'the goblet squats felt easy, could have done more', 'push-ups were hard by the last set'. Meal prep: partly done. Reply: 'the bean chili was fine but I was bored of it by Thursday, and it took nearly two hours'.",
+  "check_absent": [
+    "fish",
+    "salmon",
+    "tuna",
+    "cottage cheese",
+    "run "
+  ],
+  "red_flag_targets": null
+}

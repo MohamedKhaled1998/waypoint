@@ -1,0 +1,26 @@
+{
+  "user": {
+    "slots": [
+      { "label": "weekday mornings", "days": ["mon", "wed", "fri"], "start": "07:00", "end": "07:45" },
+      { "label": "Saturday morning", "days": ["sat"], "start": "09:00", "end": "10:30" }
+    ],
+    "time_budget_hours_per_week": 5,
+    "contact_frequency": "a couple of times a week"
+  },
+  "aspiration": {
+    "aspiration": "get back into running and finish a 10k",
+    "success_looks_like": "Running a 10 km race start to finish without walking, any time under about an hour, and still enjoying runs afterwards",
+    "why_now": "Turned 35, feels sluggish at work, wants energy back before summer",
+    "starting_point": "Walks daily, hasn't run in two years; last run was about 3 km with breaks",
+    "past_attempts": [
+      { "what": "Couch-to-5k app three years ago", "what_worked": "Short fixed sessions in the morning before work", "what_derailed": "A knee ache in week 5 and a work trip; never restarted" },
+      { "what": "Running with a friend", "what_worked": "Saturday runs were fun and social", "what_derailed": "Friend moved away" }
+    ],
+    "share_hours_per_week": 3,
+    "constraints": ["Left knee aches if mileage jumps quickly", "Travels for work about one week a month"],
+    "hoped_for_date": "2027-04-25",
+    "settle_for_date": "2027-06-30",
+    "on_skip": "quiet_replan",
+    "open_questions": ["Which race exactly; 2027-04-25 is a guess at a spring 10k", "Whether to see a physio about the knee first"]
+  }
+}

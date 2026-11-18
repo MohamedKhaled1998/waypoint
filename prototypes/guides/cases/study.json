@@ -1,0 +1,37 @@
+{
+  "aspiration": {
+    "aspiration": "learn enough SQL to answer my own questions at work",
+    "success_looks_like": "Writing my own queries with joins and grouping against our sales database, without asking the data team",
+    "starting_point": "Uses Excel daily, pivot tables and VLOOKUP; has never written SQL",
+    "domain_picture": {
+      "routine": "Commutes 40 minutes by train each way; evenings are tired",
+      "skill": "Strong in Excel; no programming; tried a video course once and stopped at module 3",
+      "limits": "Laptop at home only; work blocks installing software; phone on the train",
+      "likes": "Learning by doing, small puzzles, real business questions",
+      "dislikes": "Long videos, theory before practice"
+    },
+    "open_questions": [
+      "Which database the sales data lives in (probably Postgres)"
+    ]
+  },
+  "actions": [
+    {
+      "title": "SQL practice on the laptop",
+      "kind": "habit",
+      "minutes": 30,
+      "cadence": "3\u00d7 a week"
+    },
+    {
+      "title": "Train reading: one SQL idea",
+      "kind": "habit",
+      "minutes": 15,
+      "cadence": "4\u00d7 a week"
+    }
+  ],
+  "week_one_checkins": "Practice: done, skipped, done. Replies: 'joins clicked once I drew the tables', 'too tired Wednesday'. Train reading: done \u00d74. Reply: 'the reading was ok but I forgot most of it by the evening'.",
+  "check_absent": [
+    "video course",
+    "watch a video"
+  ],
+  "red_flag_targets": null
+}
