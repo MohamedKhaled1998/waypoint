@@ -2,9 +2,19 @@
 
 An Android app with an LLM Coach. Spec: `docs/spec/v1.md`; terms: `GLOSSARY.md`.
 
+## Set up
+
+Run the setup wizard once (and again whenever something changes; it keeps values already saved):
+
+```
+scripts/setup.sh
+```
+
+It walks you through creating the Firebase project, Google sign-in clients, the Anthropic key with its $10 limit and $8 alert, and the Tailscale address. It writes `.env`, `app/.env`, `app/google-services.json` and `secrets/firebase-service-account.json`, all gitignored. The sections below say what each value is.
+
 ## Run the server
 
-Needs Docker. Create `.env` next to `docker-compose.yml` (never commit it):
+Needs Docker. `.env` next to `docker-compose.yml` (never commit it):
 
 | Variable | Meaning |
 | --- | --- |
@@ -12,6 +22,7 @@ Needs Docker. Create `.env` next to `docker-compose.yml` (never commit it):
 | `MYSQL_ROOT_PASSWORD` | MySQL root password |
 | `JWT_KEY` | Random string of 32+ characters that signs access tokens |
 | `GOOGLE_WEB_CLIENT_ID` | Google OAuth **Web** client ID the ID tokens are issued for |
+| `ANTHROPIC_API_KEY` | Anthropic API key for the Coach |
 
 ```
 docker compose up --build

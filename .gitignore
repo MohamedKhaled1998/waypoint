@@ -8,3 +8,6 @@ dist/
 .env
 *.keystore
 .sandcastle-*.md
+secrets/
+app/google-services.json
+.DS_Store
