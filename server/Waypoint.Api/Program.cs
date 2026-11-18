@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Waypoint.Api.Auth;
+using Waypoint.Api.Coach;
 using Waypoint.Api.Data;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -16,6 +17,10 @@ builder.Services.AddOptions<GoogleOptions>().Bind(builder.Configuration.GetSecti
     .Validate(o => o.ClientIds.Length > 0, "Google:ClientIds must list at least one client ID.")
     .ValidateOnStart();
 builder.Services.AddSingleton<IGoogleTokenVerifier, GoogleTokenVerifier>();
+
+builder.Services.Configure<CoachOptions>(builder.Configuration.GetSection("Coach"));
+builder.Services.Configure<AnthropicOptions>(builder.Configuration.GetSection("Anthropic"));
+builder.Services.AddHttpClient<ICoachModelClient, AnthropicCoachModelClient>(c => c.Timeout = TimeSpan.FromMinutes(2));
 
 builder.Services.AddDbContext<WaypointDb>(o => o.UseMySql(
     builder.Configuration.GetConnectionString("Waypoint"),
@@ -86,6 +91,8 @@ app.MapGet("/me/sessions", async (TimeProvider clock, WaypointDb db, Cancellatio
         .Where(t => t.RevokedAt == null && t.ExpiresAt > now)
         .Select(t => new { t.Id }).ToListAsync(ct));
 }).RequireAuthorization();
+
+app.MapCoachChat();
 
 app.Run();
 

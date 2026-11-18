@@ -16,7 +16,14 @@ export const en = {
   },
   coach: {
     emptyTitle: 'Your Coach is here when you are ready',
-    emptyBody: 'Conversations with your Coach will appear here.',
+    emptyBody: 'Say hello below. Conversations with your Coach will appear here.',
+    inputPlaceholder: 'Message your Coach',
+    send: 'Send',
+    typing: 'Your Coach is typing',
+    saved: 'Saved · your Coach will reply when it can',
+    lateStrip: "Your Coach can't reply right now. Your messages are saved.",
+    today: 'Today',
+    yesterday: 'Yesterday',
   },
   signIn: {
     title: 'Waypoint',

@@ -25,6 +25,7 @@ services:
       ConnectionStrings__Waypoint: "Server=db;Database=waypoint;User=waypoint;Password=${MYSQL_PASSWORD}"
       Jwt__Key: ${JWT_KEY:?set JWT_KEY in .env (32+ random characters)}
       Google__ClientIds__0: ${GOOGLE_WEB_CLIENT_ID:?set GOOGLE_WEB_CLIENT_ID in .env}
+      Anthropic__ApiKey: ${ANTHROPIC_API_KEY:-}
     ports:
       - "8080:8080"
 

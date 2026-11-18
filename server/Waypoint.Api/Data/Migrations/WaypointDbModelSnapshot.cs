@@ -22,6 +22,55 @@ namespace Waypoint.Api.Data.Migrations
 
             MySqlModelBuilderExtensions.AutoIncrementColumns(modelBuilder);
 
+            modelBuilder.Entity("Waypoint.Api.Data.ChatMessage", b =>
+                {
+                    b.Property<long>("Seq")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Seq"));
+
+                    b.Property<Guid?>("AspirationId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("ClientId")
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid?>("InReplyToId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("varchar(8)");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("char(36)");
+
+                    b.HasKey("Seq");
+
+                    b.HasIndex("Id")
+                        .IsUnique();
+
+                    b.HasIndex("InReplyToId");
+
+                    b.HasIndex("UserId", "ClientId")
+                        .IsUnique();
+
+                    b.ToTable("ChatMessages");
+                });
+
             modelBuilder.Entity("Waypoint.Api.Data.RefreshToken", b =>
                 {
                     b.Property<Guid>("Id")
@@ -78,6 +127,15 @@ namespace Waypoint.Api.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("Waypoint.Api.Data.ChatMessage", b =>
+                {
+                    b.HasOne("Waypoint.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Waypoint.Api.Data.RefreshToken", b =>

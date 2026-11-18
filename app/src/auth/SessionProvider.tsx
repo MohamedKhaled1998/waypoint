@@ -7,7 +7,14 @@ import { createSession } from './session';
 type Status = 'loading' | 'signedOut' | 'signedIn';
 type SignInResult = 'ok' | 'cancelled' | 'failed';
 
-type Value = { status: Status; signIn: () => Promise<SignInResult>; signOut: () => Promise<void> };
+type Value = {
+  status: Status;
+  /** The current access token (null when signed out) and a way to renew it after a 401. */
+  getAccessToken: () => string | null;
+  renewAccess: () => Promise<boolean>;
+  signIn: () => Promise<SignInResult>;
+  signOut: () => Promise<void>;
+};
 
 const SessionContext = createContext<Value | null>(null);
 
@@ -26,6 +33,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const value = useMemo<Value>(
     () => ({
       status,
+      getAccessToken: session.getAccessToken,
+      renewAccess: () => session.restore().catch(() => false),
       async signIn() {
         try {
           const idToken = await getGoogleIdToken();

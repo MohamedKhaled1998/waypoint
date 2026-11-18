@@ -2,9 +2,11 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using Testcontainers.MySql;
 using Waypoint.Api.Auth;
+using Waypoint.Api.Coach;
 
 namespace Waypoint.Api.Tests.Support;
 
@@ -12,6 +14,9 @@ namespace Waypoint.Api.Tests.Support;
 public sealed class WaypointApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
     private readonly MySqlContainer _mysql = new MySqlBuilder("mysql:8.0").Build();
+
+    public FakeCoachModelClient Coach { get; } = new();
+    public CapturedLogs Logs { get; } = new();
 
     public FakeTimeProvider Clock { get; } = new(new DateTimeOffset(2026, 1, 5, 9, 0, 0, TimeSpan.Zero));
 
@@ -32,6 +37,9 @@ public sealed class WaypointApiFactory : WebApplicationFactory<Program>, IAsyncL
         {
             services.RemoveAll<IGoogleTokenVerifier>();
             services.AddSingleton<IGoogleTokenVerifier, FakeGoogleVerifier>();
+            services.RemoveAll<ICoachModelClient>();
+            services.AddSingleton<ICoachModelClient>(Coach);
+            services.AddSingleton<ILoggerProvider>(Logs);
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<TimeProvider>(Clock);
         });

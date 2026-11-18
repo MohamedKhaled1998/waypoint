@@ -8,6 +8,8 @@ public sealed class WaypointDb(DbContextOptions<WaypointDb> options, CurrentUser
     public DbSet<User> Users => Set<User>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
+    public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
+
     // Read per query by the global filters. Null (no signed-in user) matches nothing.
     private Guid? CurrentUserId => currentUser.Id;
 
@@ -26,6 +28,21 @@ public sealed class WaypointDb(DbContextOptions<WaypointDb> options, CurrentUser
             e.HasIndex(t => t.UserId);
             e.HasOne<User>().WithMany().HasForeignKey(t => t.UserId);
             e.HasQueryFilter(t => t.UserId == CurrentUserId);
+        });
+    
+        b.Entity<ChatMessage>(e =>
+        {
+            // Seq is the key so the database orders the thread; Id is what the API shows.
+            e.HasKey(m => m.Seq);
+            e.Property(m => m.Seq).ValueGeneratedOnAdd();
+            e.HasIndex(m => m.Id).IsUnique();
+            e.Property(m => m.Role).HasMaxLength(8);
+            e.Property(m => m.Text).HasColumnType("longtext");
+            e.Property(m => m.ClientId).HasMaxLength(64);
+            e.HasIndex(m => new { m.UserId, m.ClientId }).IsUnique();
+            e.HasIndex(m => m.InReplyToId);
+            e.HasOne<User>().WithMany().HasForeignKey(m => m.UserId);
+            e.HasQueryFilter(m => m.UserId == CurrentUserId);
         });
     }
 }
