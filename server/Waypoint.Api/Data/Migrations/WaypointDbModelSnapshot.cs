@@ -134,6 +134,43 @@ namespace Waypoint.Api.Data.Migrations
                     b.ToTable("ChatMessages");
                 });
 
+            modelBuilder.Entity("Waypoint.Api.Data.Habit", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<int>("Minutes")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("PlanVersionId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("SlotIds")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("varchar(512)");
+
+                    b.Property<int>("TimesPerWeek")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("char(36)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PlanVersionId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("Habits");
+                });
+
             modelBuilder.Entity("Waypoint.Api.Data.Interview", b =>
                 {
                     b.Property<Guid>("Id")
@@ -218,6 +255,196 @@ namespace Waypoint.Api.Data.Migrations
                     b.ToTable("InterviewMessages");
                 });
 
+            modelBuilder.Entity("Waypoint.Api.Data.Job", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid?>("AspirationId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<DateTime>("NextRunAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("PayloadJson")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("varchar(512)");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("varchar(16)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("char(36)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("State", "NextRunAt");
+
+                    b.HasIndex("UserId", "AspirationId");
+
+                    b.ToTable("Jobs");
+                });
+
+            modelBuilder.Entity("Waypoint.Api.Data.Milestone", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("varchar(8)");
+
+                    b.Property<Guid>("PlanVersionId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("ReachedWhen")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<string>("Ref")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("varchar(16)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("char(36)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PlanVersionId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("Milestones");
+                });
+
+            modelBuilder.Entity("Waypoint.Api.Data.PlanTask", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateOnly?>("DueDate")
+                        .HasColumnType("date");
+
+                    b.Property<Guid>("MilestoneId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<int>("Minutes")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("PlanVersionId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("char(36)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MilestoneId");
+
+                    b.HasIndex("PlanVersionId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("PlanTasks");
+                });
+
+            modelBuilder.Entity("Waypoint.Api.Data.PlanVersion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime?>("ApprovedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<Guid>("AspirationId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("AssumptionsJson")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<int?>("Number")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Ramp")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("Rationale")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<DateOnly>("StartDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("varchar(16)");
+
+                    b.Property<string>("TwoWeeksJson")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("char(36)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("AspirationId", "Status");
+
+                    b.ToTable("PlanVersions");
+                });
+
             modelBuilder.Entity("Waypoint.Api.Data.RefreshToken", b =>
                 {
                     b.Property<Guid>("Id")
@@ -252,6 +479,54 @@ namespace Waypoint.Api.Data.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("RefreshTokens");
+                });
+
+            modelBuilder.Entity("Waypoint.Api.Data.ScheduledAction", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid>("AspirationId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date");
+
+                    b.Property<Guid?>("HabitId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<int>("Minutes")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("PlanVersionId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid>("SlotId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid?>("TaskId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("char(36)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AspirationId");
+
+                    b.HasIndex("PlanVersionId");
+
+                    b.HasIndex("SlotId");
+
+                    b.HasIndex("UserId", "Date");
+
+                    b.ToTable("ScheduledActions");
                 });
 
             modelBuilder.Entity("Waypoint.Api.Data.Slot", b =>
@@ -340,6 +615,21 @@ namespace Waypoint.Api.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Waypoint.Api.Data.Habit", b =>
+                {
+                    b.HasOne("Waypoint.Api.Data.PlanVersion", null)
+                        .WithMany()
+                        .HasForeignKey("PlanVersionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Waypoint.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Waypoint.Api.Data.Interview", b =>
                 {
                     b.HasOne("Waypoint.Api.Data.User", null)
@@ -358,8 +648,95 @@ namespace Waypoint.Api.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Waypoint.Api.Data.Job", b =>
+                {
+                    b.HasOne("Waypoint.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Waypoint.Api.Data.Milestone", b =>
+                {
+                    b.HasOne("Waypoint.Api.Data.PlanVersion", null)
+                        .WithMany()
+                        .HasForeignKey("PlanVersionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Waypoint.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Waypoint.Api.Data.PlanTask", b =>
+                {
+                    b.HasOne("Waypoint.Api.Data.Milestone", null)
+                        .WithMany()
+                        .HasForeignKey("MilestoneId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Waypoint.Api.Data.PlanVersion", null)
+                        .WithMany()
+                        .HasForeignKey("PlanVersionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Waypoint.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Waypoint.Api.Data.PlanVersion", b =>
+                {
+                    b.HasOne("Waypoint.Api.Data.Aspiration", null)
+                        .WithMany()
+                        .HasForeignKey("AspirationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Waypoint.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Waypoint.Api.Data.RefreshToken", b =>
                 {
+                    b.HasOne("Waypoint.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Waypoint.Api.Data.ScheduledAction", b =>
+                {
+                    b.HasOne("Waypoint.Api.Data.Aspiration", null)
+                        .WithMany()
+                        .HasForeignKey("AspirationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Waypoint.Api.Data.PlanVersion", null)
+                        .WithMany()
+                        .HasForeignKey("PlanVersionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Waypoint.Api.Data.Slot", null)
+                        .WithMany()
+                        .HasForeignKey("SlotId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
                     b.HasOne("Waypoint.Api.Data.User", null)
                         .WithMany()
                         .HasForeignKey("UserId")

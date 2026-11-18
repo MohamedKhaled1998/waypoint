@@ -24,6 +24,7 @@ function Routes() {
       <Stack.Protected guard={status === 'signedIn'}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="interview" options={{ title: t('interview.title') }} />
+        <Stack.Screen name="plan-review" options={{ title: t('plan.title') }} />
         <Stack.Screen name="settings" options={{ title: t('settings.title') }} />
       </Stack.Protected>
       <Stack.Protected guard={status === 'signedOut'}>

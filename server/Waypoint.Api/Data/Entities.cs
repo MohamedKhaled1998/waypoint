@@ -115,3 +115,116 @@ public sealed class InterviewMessage
     public Guid? InReplyToId { get; set; }
     public DateTime CreatedAt { get; set; }
 }
+
+public static class JobState
+{
+    public const string Pending = "pending";
+    public const string Done = "done";
+    public const string Failed = "failed";
+}
+
+/// <summary>
+/// A unit of background work. The payload holds row IDs only, never free text. System queue: the runner reads it
+/// across users and then acts as the job's user, so every user-owned row it touches stays behind the query filter.
+/// </summary>
+public sealed class Job
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    public required string Kind { get; set; }
+    /// <summary>The Aspiration a Plan job drafts for; null for kinds that have none.</summary>
+    public Guid? AspirationId { get; set; }
+    /// <summary>A JSON object whose values are all row IDs.</summary>
+    public required string PayloadJson { get; set; }
+    public required string State { get; set; }
+    public int Attempts { get; set; }
+    public DateTime NextRunAt { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+public static class PlanVersionStatus
+{
+    public const string Proposed = "proposed";
+    public const string Approved = "approved";
+    /// <summary>A proposal the server replaced with a newer one before it was approved.</summary>
+    public const string Replaced = "replaced";
+    /// <summary>An approved version a later approved version took over from.</summary>
+    public const string Superseded = "superseded";
+}
+
+/// <summary>A version of an Aspiration's Plan; immutable once approved. User-owned.</summary>
+public sealed class PlanVersion
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    public Guid AspirationId { get; set; }
+    /// <summary>1, 2, ... assigned at approval; null while proposed.</summary>
+    public int? Number { get; set; }
+    public required string Status { get; set; }
+    public required string Rationale { get; set; }
+    /// <summary>Why this version exists, as a code: "first_plan", later "weekly_refresh", "re_plan", ...</summary>
+    public required string Reason { get; set; }
+    public required string Ramp { get; set; }
+    public required string AssumptionsJson { get; set; }
+    /// <summary>The validated first two weeks as the Coach drafted them; becomes scheduled Actions on approval.</summary>
+    public required string TwoWeeksJson { get; set; }
+    public DateOnly StartDate { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? ApprovedAt { get; set; }
+}
+
+public sealed class Milestone
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    public Guid PlanVersionId { get; set; }
+    /// <summary>The Coach's id for it within the draft ("m1"); tasks point at it.</summary>
+    public required string Ref { get; set; }
+    public DateOnly Date { get; set; }
+    public required string Title { get; set; }
+    public required string ReachedWhen { get; set; }
+    /// <summary>effort or ability.</summary>
+    public required string Kind { get; set; }
+    /// <summary>upcoming, reached or nearly_there.</summary>
+    public required string State { get; set; }
+}
+
+/// <summary>A recurring Action: "N times a week" on Slots. Belongs to the Plan version.</summary>
+public sealed class Habit
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    public Guid PlanVersionId { get; set; }
+    public required string Title { get; set; }
+    public int TimesPerWeek { get; set; }
+    public int Minutes { get; set; }
+    /// <summary>Comma-separated Slot IDs.</summary>
+    public required string SlotIds { get; set; }
+}
+
+/// <summary>A one-off Action on a Milestone, with a date or, when <see cref="DueDate"/> is null, "this week".</summary>
+public sealed class PlanTask
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    public Guid PlanVersionId { get; set; }
+    public Guid MilestoneId { get; set; }
+    public required string Title { get; set; }
+    public int Minutes { get; set; }
+    public DateOnly? DueDate { get; set; }
+}
+
+/// <summary>An occurrence in the two-week window. Exists only once its Plan version is approved.</summary>
+public sealed class ScheduledAction
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    public Guid AspirationId { get; set; }
+    public Guid PlanVersionId { get; set; }
+    public Guid? HabitId { get; set; }
+    public Guid? TaskId { get; set; }
+    public DateOnly Date { get; set; }
+    public Guid SlotId { get; set; }
+    public required string Title { get; set; }
+    public int Minutes { get; set; }
+}

@@ -14,6 +14,13 @@ public sealed class WaypointDb(DbContextOptions<WaypointDb> options, CurrentUser
     public DbSet<Interview> Interviews => Set<Interview>();
     public DbSet<InterviewMessage> InterviewMessages => Set<InterviewMessage>();
 
+    public DbSet<Job> Jobs => Set<Job>();
+    public DbSet<PlanVersion> PlanVersions => Set<PlanVersion>();
+    public DbSet<Milestone> Milestones => Set<Milestone>();
+    public DbSet<Habit> Habits => Set<Habit>();
+    public DbSet<PlanTask> PlanTasks => Set<PlanTask>();
+    public DbSet<ScheduledAction> ScheduledActions => Set<ScheduledAction>();
+
     // Read per query by the global filters. Null (no signed-in user) matches nothing.
     private Guid? CurrentUserId => currentUser.Id;
 
@@ -94,6 +101,71 @@ public sealed class WaypointDb(DbContextOptions<WaypointDb> options, CurrentUser
             e.HasIndex(m => m.InterviewId);
             e.HasOne<User>().WithMany().HasForeignKey(m => m.UserId);
             e.HasQueryFilter(m => m.UserId == CurrentUserId);
+        });
+
+        b.Entity<Job>(e =>
+        {
+            e.Property(j => j.Kind).HasMaxLength(32);
+            e.Property(j => j.State).HasMaxLength(16);
+            e.Property(j => j.PayloadJson).HasMaxLength(512);
+            e.HasIndex(j => new { j.State, j.NextRunAt });
+            e.HasIndex(j => new { j.UserId, j.AspirationId });
+            e.HasOne<User>().WithMany().HasForeignKey(j => j.UserId).OnDelete(DeleteBehavior.Cascade);
+            // Only the job runner reads across users, and it says so with IgnoreQueryFilters.
+            e.HasQueryFilter(j => j.UserId == CurrentUserId);
+        });
+        b.Entity<PlanVersion>(e =>
+        {
+            e.Property(p => p.Status).HasMaxLength(16);
+            e.Property(p => p.Reason).HasMaxLength(32);
+            e.Property(p => p.Rationale).HasColumnType("longtext");
+            e.Property(p => p.Ramp).HasColumnType("longtext");
+            e.Property(p => p.AssumptionsJson).HasColumnType("longtext");
+            e.Property(p => p.TwoWeeksJson).HasColumnType("longtext");
+            e.HasIndex(p => new { p.AspirationId, p.Status });
+            e.HasOne<User>().WithMany().HasForeignKey(p => p.UserId);
+            e.HasOne<Aspiration>().WithMany().HasForeignKey(p => p.AspirationId).OnDelete(DeleteBehavior.Cascade);
+            e.HasQueryFilter(p => p.UserId == CurrentUserId);
+        });
+        b.Entity<Milestone>(e =>
+        {
+            e.Property(m => m.Ref).HasMaxLength(32);
+            e.Property(m => m.Title).HasMaxLength(200);
+            e.Property(m => m.ReachedWhen).HasMaxLength(500);
+            e.Property(m => m.Kind).HasMaxLength(8);
+            e.Property(m => m.State).HasMaxLength(16);
+            e.HasIndex(m => m.PlanVersionId);
+            e.HasOne<PlanVersion>().WithMany().HasForeignKey(m => m.PlanVersionId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<User>().WithMany().HasForeignKey(m => m.UserId);
+            e.HasQueryFilter(m => m.UserId == CurrentUserId);
+        });
+        b.Entity<Habit>(e =>
+        {
+            e.Property(h => h.Title).HasMaxLength(200);
+            e.Property(h => h.SlotIds).HasMaxLength(512);
+            e.HasIndex(h => h.PlanVersionId);
+            e.HasOne<PlanVersion>().WithMany().HasForeignKey(h => h.PlanVersionId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<User>().WithMany().HasForeignKey(h => h.UserId);
+            e.HasQueryFilter(h => h.UserId == CurrentUserId);
+        });
+        b.Entity<PlanTask>(e =>
+        {
+            e.Property(t => t.Title).HasMaxLength(200);
+            e.HasIndex(t => t.PlanVersionId);
+            e.HasOne<PlanVersion>().WithMany().HasForeignKey(t => t.PlanVersionId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<Milestone>().WithMany().HasForeignKey(t => t.MilestoneId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<User>().WithMany().HasForeignKey(t => t.UserId);
+            e.HasQueryFilter(t => t.UserId == CurrentUserId);
+        });
+        b.Entity<ScheduledAction>(e =>
+        {
+            e.Property(a => a.Title).HasMaxLength(200);
+            e.HasIndex(a => new { a.UserId, a.Date });
+            e.HasOne<PlanVersion>().WithMany().HasForeignKey(a => a.PlanVersionId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<Aspiration>().WithMany().HasForeignKey(a => a.AspirationId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<Slot>().WithMany().HasForeignKey(a => a.SlotId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<User>().WithMany().HasForeignKey(a => a.UserId);
+            e.HasQueryFilter(a => a.UserId == CurrentUserId);
         });
     }
 }

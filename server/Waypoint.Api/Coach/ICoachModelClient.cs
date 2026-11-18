@@ -19,4 +19,10 @@ public interface ICoachModelClient
 }
 
 /// <summary>The provider could not answer. Carries no provider text, so it is safe to log.</summary>
-public sealed class CoachUnavailableException(string reason) : Exception(reason);
+/// <summary>An exception whose <see cref="Reason"/> is a code with no user text, safe to log.</summary>
+public interface ISafeReason { string Reason { get; } }
+
+public sealed class CoachUnavailableException(string reason) : Exception(reason), ISafeReason
+{
+    public string Reason => reason;
+}

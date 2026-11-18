@@ -5,6 +5,9 @@ export type StoredMessage = {
   role: 'user' | 'coach';
   text: string;
   clientId: string | null; createdAt: string;
+  /** Set on a card message, e.g. "proposal". */
+  card?: string | null;
+  cardData?: Record<string, any> | null;
   /** False for a user message the Coach has not answered yet (kept on the server, waiting for a successful call). */
   replied: boolean;
 };
@@ -17,6 +20,8 @@ export type ChatMessage = {
   text: string;
   createdAt: string;
   status: 'sending' | 'saved' | 'sent';
+  card?: string;
+  cardData?: Record<string, any>;
 };
 
 export type ChatState = { messages: ChatMessage[]; typing: boolean; late: boolean };
@@ -64,6 +69,8 @@ export function createCoachChat(api: CoachApi, deps: Deps) {
               text: m.text,
               createdAt: m.createdAt,
               clientId: m.clientId ?? undefined,
+              card: m.card ?? undefined,
+              cardData: m.cardData ?? undefined,
               // Stored but unanswered: still Saved, and resent with its client ID.
               status: m.role === 'user' && !m.replied ? 'saved' : 'sent',
             }),

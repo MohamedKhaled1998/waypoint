@@ -1,0 +1,158 @@
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using Waypoint.Api.Data;
+
+namespace Waypoint.Api.Coach;
+
+/// <summary>
+/// The Plan job: asks the Coach for a Plan, checks it against the hard rules, and stores it as a proposed version.
+/// A draft that breaks a rule goes back to the Coach once with the problem codes; if it still fails the job fails and
+/// is retried later. Runs as the job's user, so the query filter applies.
+/// </summary>
+public sealed class PlanDrafter(WaypointDb db, ICoachModelClient model, IOptions<CoachOptions> options, TimeProvider clock,
+    ILogger<PlanDrafter> log)
+{
+    public async Task DraftAsync(Guid aspirationId, CancellationToken ct)
+    {
+        var aspiration = await db.Aspirations.FirstOrDefaultAsync(a => a.Id == aspirationId, ct)
+            ?? throw new InvalidOperationException("aspiration_missing");
+        var interview = await db.Interviews.Where(i => i.AspirationId == aspirationId && i.HandOffJson != null)
+            .OrderByDescending(i => i.CreatedAt).FirstOrDefaultAsync(ct)
+            ?? throw new InvalidOperationException("interview_missing");
+        var slots = await db.Slots.OrderBy(s => s.Start).ToListAsync(ct);
+        var user = await db.Users.SingleAsync(ct);
+
+        var now = clock.GetUtcNow().UtcDateTime;
+        var today = DateOnly.FromDateTime(now);
+        var start = today.AddDays(1);
+
+        var handOff = JsonNode.Parse(interview.HandOffJson!)!.AsObject();
+        var brief = new JsonObject
+        {
+            ["today"] = today.ToString("yyyy-MM-dd"),
+            ["start"] = start.ToString("yyyy-MM-dd"),
+            ["user"] = new JsonObject
+            {
+                ["slots"] = new JsonArray(slots.Select(s => (JsonNode)new JsonObject
+                {
+                    ["label"] = s.Label, ["days"] = new JsonArray(s.Days.Split(',').Select(d => (JsonNode)d).ToArray()),
+                    ["start"] = s.Start, ["end"] = s.End,
+                }).ToArray()),
+                ["time_budget_hours_per_week"] = user.TimeBudgetHours,
+            },
+            ["aspiration"] = handOff["aspiration"]?.DeepClone(),
+        };
+
+        var choice = options.Value.For(CoachCallKind.Plan);
+        var turns = new List<CoachTurn> { new("user", brief.ToJsonString()) };
+        JsonObject? plan = null;
+        List<string> problems = [];
+        for (var attempt = 1; attempt <= 2; attempt++)
+        {
+            var full = new StringBuilder();
+            await foreach (var chunk in model.StreamAsync(
+                new CoachRequest(CoachCallKind.Plan, choice.Provider, choice.Model, PlanPrompt.System, turns), ct))
+                full.Append(chunk);
+            if (full.Length == 0) throw new CoachUnavailableException("empty_reply");
+
+            plan = ParseJson(full.ToString());
+            problems = PlanRules.Validate(plan, slots, start, aspiration.SettleForDate);
+            if (problems.Count == 0) break;
+            log.LogInformation("Plan draft for Aspiration {AspirationId} rejected on attempt {Attempt}: {Problems}",
+                aspirationId, attempt, string.Join(",", problems));
+            turns.Add(new CoachTurn("assistant", full.ToString()));
+            turns.Add(new CoachTurn("user", PlanPrompt.Rejected(problems)));
+        }
+        if (problems.Count > 0) throw new PlanProblemException(problems);
+
+        await StoreAsync(aspiration, plan!, slots, start, now, ct);
+    }
+
+    private async Task StoreAsync(Aspiration aspiration, JsonObject plan, List<Slot> slots, DateOnly start, DateTime now, CancellationToken ct)
+    {
+        // At most one pending proposal per Aspiration: a new one replaces the old.
+        // Conditional, so a proposal approved a moment ago is not overwritten.
+        await db.PlanVersions.Where(p => p.AspirationId == aspiration.Id && p.Status == PlanVersionStatus.Proposed)
+            .ExecuteUpdateAsync(s => s.SetProperty(p => p.Status, PlanVersionStatus.Replaced), ct);
+
+        var byLabel = slots.GroupBy(s => s.Label).ToDictionary(g => g.Key, g => g.First());
+        var habitIds = new Dictionary<string, Guid>();
+        var taskIds = new Dictionary<string, Guid>();
+        var version = new PlanVersion
+        {
+            Id = Guid.NewGuid(), UserId = aspiration.UserId, AspirationId = aspiration.Id, Status = PlanVersionStatus.Proposed,
+            Rationale = HandOff.Str(plan, "rationale")!, Reason = "first_plan", Ramp = HandOff.Str(plan, "ramp") ?? "",
+            AssumptionsJson = (plan["assumptions"] as JsonArray ?? []).ToJsonString(),
+            TwoWeeksJson = "[]", StartDate = start, CreatedAt = now,
+        };
+        db.PlanVersions.Add(version);
+
+        var milestoneIds = new Dictionary<string, Guid>();
+        foreach (var m in plan["milestones"]!.AsArray().Select(m => m!.AsObject()))
+        {
+            var id = Guid.NewGuid();
+            milestoneIds[HandOff.Str(m, "id")!] = id;
+            db.Milestones.Add(new Milestone
+            {
+                Id = id, UserId = aspiration.UserId, PlanVersionId = version.Id, Ref = HandOff.Str(m, "id")!,
+                Date = PlanRules.ParseDate(HandOff.Str(m, "date"))!.Value, Title = HandOff.Str(m, "title")!,
+                ReachedWhen = HandOff.Str(m, "reached_when")!, Kind = HandOff.Str(m, "kind")!, State = "upcoming",
+            });
+        }
+        foreach (var h in plan["habits"]!.AsArray().Select(h => h!.AsObject()))
+        {
+            var habitId = habitIds[HandOff.Str(h, "title")!] = Guid.NewGuid();
+            db.Habits.Add(new Habit
+            {
+                Id = habitId, UserId = aspiration.UserId, PlanVersionId = version.Id, Title = HandOff.Str(h, "title")!,
+                TimesPerWeek = (int)HandOff.Num(h, "times_per_week")!.Value, Minutes = (int)HandOff.Num(h, "minutes")!.Value,
+                SlotIds = string.Join(",", h["slots"]!.AsArray().Select(s => byLabel[s!.GetValue<string>()].Id)),
+            });
+        }
+        foreach (var t in plan["tasks"]!.AsArray().Select(t => t!.AsObject()))
+        {
+            var taskId = taskIds[HandOff.Str(t, "title")!] = Guid.NewGuid();
+            db.PlanTasks.Add(new PlanTask
+            {
+                Id = taskId, UserId = aspiration.UserId, PlanVersionId = version.Id,
+                MilestoneId = milestoneIds[HandOff.Str(t, "milestone")!], Title = HandOff.Str(t, "title")!,
+                Minutes = (int)HandOff.Num(t, "minutes")!.Value, DueDate = PlanRules.ParseDate(HandOff.Str(t, "due")),
+            });
+        }
+
+        // The window keeps its own references: approving links each Action by ID, never by title or label again.
+        var window = new JsonArray();
+        foreach (var a in plan["first_two_weeks"]!.AsArray().Select(a => a!.AsObject()))
+        {
+            var copy = (JsonObject)a.DeepClone();
+            var title = HandOff.Str(a, "action")!;
+            copy["slotId"] = byLabel[HandOff.Str(a, "slot")!].Id;
+            if (HandOff.Str(a, "kind") == "habit" && habitIds.TryGetValue(title, out var hid)) copy["habitId"] = hid;
+            if (HandOff.Str(a, "kind") == "task" && taskIds.TryGetValue(title, out var tid)) copy["taskId"] = tid;
+            window.Add(copy);
+        }
+        version.TwoWeeksJson = window.ToJsonString();
+
+        var card = new JsonObject { ["planVersionId"] = version.Id, ["aspirationId"] = aspiration.Id, ["shortName"] = aspiration.ShortName, ["hue"] = aspiration.Hue };
+        db.ChatMessages.Add(new ChatMessage
+        {
+            Id = Guid.NewGuid(), UserId = aspiration.UserId, Role = "coach", Text = version.Rationale,
+            AspirationId = aspiration.Id, Card = "proposal", CardJson = card.ToJsonString(), CreatedAt = now,
+        });
+        await db.SaveChangesAsync(ct);
+        log.LogInformation("Plan version {PlanVersionId} proposed for Aspiration {AspirationId}", version.Id, aspiration.Id);
+    }
+
+    /// <summary>The first JSON object in a reply, with or without a code fence around it.</summary>
+    private static JsonObject? ParseJson(string reply)
+    {
+        var from = reply.IndexOf('{');
+        var to = reply.LastIndexOf('}');
+        if (from < 0 || to <= from) return null;
+        try { return JsonNode.Parse(reply[from..(to + 1)]) as JsonObject; }
+        catch (JsonException) { return null; }
+    }
+}

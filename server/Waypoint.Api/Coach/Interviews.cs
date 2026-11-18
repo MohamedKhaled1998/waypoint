@@ -228,7 +228,7 @@ public static class Interviews
         }
     }
 
-    private static async Task<IResult> Confirm(Guid id, ConfirmInterviewRequest req, WaypointDb db, CurrentUser me, TimeProvider clock, CancellationToken ct)
+    private static async Task<IResult> Confirm(Guid id, ConfirmInterviewRequest req, WaypointDb db, CurrentUser me, JobQueue jobs, TimeProvider clock, CancellationToken ct)
     {
         var interview = await db.Interviews.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (interview is null) return Results.NotFound();
@@ -295,6 +295,7 @@ public static class Interviews
             Id = Guid.NewGuid(), UserId = user.Id, Role = "coach", Text = HandOff.Str(a, "picture")!,
             AspirationId = aspiration.Id, Card = "interview_summary", CardJson = card.ToJsonString(), CreatedAt = now,
         });
+        jobs.Add(JobKinds.Plan, user.Id, new Dictionary<string, Guid> { ["aspirationId"] = aspiration.Id }, aspiration.Id);
         await db.SaveChangesAsync(ct);
         return Results.Ok(new { aspirationId = aspiration.Id, aspiration.ShortName, aspiration.Hue });
     }

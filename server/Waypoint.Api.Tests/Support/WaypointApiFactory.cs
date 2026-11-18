@@ -33,6 +33,8 @@ public sealed class WaypointApiFactory : WebApplicationFactory<Program>, IAsyncL
         builder.UseSetting("ConnectionStrings:Waypoint", _mysql.GetConnectionString());
         builder.UseSetting("Jwt:Key", "test-signing-key-test-signing-key-0123456789");
         builder.UseSetting("Google:ClientIds:0", "test-client-id");
+        // Tests step the job runner themselves.
+        builder.UseSetting("Jobs:Worker:Enabled", "false");
         builder.ConfigureServices(services =>
         {
             services.RemoveAll<IGoogleTokenVerifier>();

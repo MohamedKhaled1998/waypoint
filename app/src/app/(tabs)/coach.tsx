@@ -2,11 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Pressable, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
+import { useRouter } from 'expo-router';
 import { StyleSheet, useUnistyles } from 'react-native-unistyles';
 import { groupByDay, type ChatMessage } from '../../coach/chat';
 import { useCoachChat } from '../../coach/useCoachChat';
 import { useKeyboardHeight } from '../../coach/useKeyboardHeight';
 import { Banner } from '../../ui/Banner';
+import { Button } from '../../ui/Button';
+import { Card } from '../../ui/Card';
 import { Text } from '../../ui/Text';
 
 type Row =
@@ -16,6 +19,7 @@ type Row =
 
 export default function CoachScreen() {
   const { t } = useTranslation();
+  const router = useRouter();
   const { theme } = useUnistyles();
   const insets = useSafeAreaInsets();
   const keyboard = useKeyboardHeight();
@@ -54,6 +58,16 @@ export default function CoachScreen() {
         <View style={[styles.bubble, styles.coach]} accessibilityLabel={t('coach.typing')}>
           <Text muted>•••</Text>
         </View>
+      );
+    }
+    if (item.message.card === 'proposal' && item.message.cardData?.planVersionId) {
+      const versionId = String(item.message.cardData.planVersionId);
+      return (
+        <Card hue={item.message.cardData.hue}>
+          <Text variant="heading">{t('plan.proposalTitle', { name: item.message.cardData.shortName })}</Text>
+          <Text muted>{t('plan.proposalBody')}</Text>
+          <Button title={t('plan.review')} onPress={() => router.push({ pathname: '/plan-review', params: { id: versionId } })} />
+        </Card>
       );
     }
     const mine = item.message.role === 'user';
