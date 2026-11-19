@@ -205,6 +205,8 @@ public sealed class PlanVersion
     public string? ChangesJson { get; set; }
     /// <summary>Approved by the server after a day without an answer, not by the user.</summary>
     public bool AutoApplied { get; set; }
+    /// <summary>Guide changes made while this version was in force (chat requests), each with its reason, as a JSON array.</summary>
+    public string? GuideLogJson { get; set; }
 }
 
 public sealed class Milestone
@@ -221,17 +223,6 @@ public sealed class Milestone
     public required string Kind { get; set; }
     /// <summary>upcoming, reached or nearly_there.</summary>
     public required string State { get; set; }
-    public DateTime? ReachedAt { get; set; }
-    /// <summary>When the Coach asked "Did you reach it?" at the Milestone's date; null until asked, and again after an extension.</summary>
-    public DateTime? AskedAt { get; set; }
-    /// <summary>When the user said no to "Did you reach it?" and the work wasn't done: feeds a Re-plan, never a failure.</summary>
-    public DateTime? NotReachedAt { get; set; }
-    /// <summary>The optional Measure beside this Milestone (at most one): a Plan's Measures share one name and unit, so readings form one series.</summary>
-    public string? MeasureName { get; set; }
-    public string? MeasureUnit { get; set; }
-    public double? MeasureStart { get; set; }
-    public double? MeasureHopedFor { get; set; }
-    public bool HasMeasure => MeasureName is not null;
 }
 
 /// <summary>A recurring Action: "N times a week" on Slots. Belongs to the Plan version.</summary>
@@ -245,6 +236,8 @@ public sealed class Habit
     public int Minutes { get; set; }
     /// <summary>Comma-separated Slot IDs.</summary>
     public required string SlotIds { get; set; }
+    /// <summary>The Action's Guide as JSON (<see cref="Waypoint.Api.Coach.GuideRules"/>); null when it has none.</summary>
+    public string? GuideJson { get; set; }
 }
 
 /// <summary>A one-off Action on a Milestone, with a date or, when <see cref="DueDate"/> is null, "this week".</summary>
@@ -257,6 +250,7 @@ public sealed class PlanTask
     public required string Title { get; set; }
     public int Minutes { get; set; }
     public DateOnly? DueDate { get; set; }
+    public string? GuideJson { get; set; }
 }
 
 /// <summary>An occurrence in the two-week window. Exists only once its Plan version is approved.</summary>
@@ -281,8 +275,8 @@ public sealed class ScheduledAction
     /// <summary>Written ahead by the light model, so a reminder needs no model call. Null until written.</summary>
     public string? ReminderText { get; set; }
     public bool ReminderOn { get; set; } = true;
-    /// <summary>Set on the one-off test task of an ability Milestone (its <see cref="Milestone.Ref"/>); a weekly refresh keeps it.</summary>
-    public string? TestForMilestoneRef { get; set; }
+    /// <summary>The Guide as it stands, copied from the habit or task and kept up to date when a chat request changes it.</summary>
+    public string? GuideJson { get; set; }
 }
 
 public static class ReminderKinds

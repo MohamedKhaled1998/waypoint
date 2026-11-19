@@ -22,102 +22,6 @@ namespace Waypoint.Api.Data.Migrations
 
             MySqlModelBuilderExtensions.AutoIncrementColumns(modelBuilder);
 
-            modelBuilder.Entity("Waypoint.Api.Coach.MeasureReading", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("char(36)");
-
-                    b.Property<Guid>("AspirationId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<string>("ClientId")
-                        .HasMaxLength(64)
-                        .HasColumnType("varchar(64)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<DateOnly>("Date")
-                        .HasColumnType("date");
-
-                    b.Property<string>("MilestoneRef")
-                        .HasMaxLength(32)
-                        .HasColumnType("varchar(32)");
-
-                    b.Property<string>("Source")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("varchar(16)");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<double>("Value")
-                        .HasColumnType("double");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AspirationId");
-
-                    b.HasIndex("UserId", "AspirationId", "Date");
-
-                    b.HasIndex("UserId", "ClientId")
-                        .IsUnique();
-
-                    b.ToTable("MeasureReadings");
-                });
-
-            modelBuilder.Entity("Waypoint.Api.Coach.ProgressReading", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("char(36)");
-
-                    b.Property<Guid>("AspirationId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<DateTime>("At")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<bool>("LateEarly")
-                        .HasColumnType("tinyint(1)");
-
-                    b.Property<bool>("MiddleOver")
-                        .HasColumnType("tinyint(1)");
-
-                    b.Property<double?>("Pace")
-                        .HasColumnType("double");
-
-                    b.Property<bool>("PastSettleFor")
-                        .HasColumnType("tinyint(1)");
-
-                    b.Property<Guid?>("PlanVersionId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<Guid>("RefreshId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<bool>("Spoke")
-                        .HasColumnType("tinyint(1)");
-
-                    b.Property<string>("State")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("varchar(16)");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("char(36)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AspirationId");
-
-                    b.HasIndex("UserId", "AspirationId", "At");
-
-                    b.ToTable("ProgressReadings");
-                });
-
             modelBuilder.Entity("Waypoint.Api.Data.Aspiration", b =>
                 {
                     b.Property<Guid>("Id")
@@ -312,6 +216,9 @@ namespace Waypoint.Api.Data.Migrations
 
             modelBuilder.Entity("Waypoint.Api.Data.Habit", b =>
                 {
+                    b.Property<string>("GuideJson")
+                        .HasColumnType("longtext");
+
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("char(36)");
@@ -482,9 +389,6 @@ namespace Waypoint.Api.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("char(36)");
 
-                    b.Property<DateTime?>("AskedAt")
-                        .HasColumnType("datetime(6)");
-
                     b.Property<DateOnly>("Date")
                         .HasColumnType("date");
 
@@ -493,28 +397,8 @@ namespace Waypoint.Api.Data.Migrations
                         .HasMaxLength(8)
                         .HasColumnType("varchar(8)");
 
-                    b.Property<double?>("MeasureHopedFor")
-                        .HasColumnType("double");
-
-                    b.Property<string>("MeasureName")
-                        .HasMaxLength(64)
-                        .HasColumnType("varchar(64)");
-
-                    b.Property<double?>("MeasureStart")
-                        .HasColumnType("double");
-
-                    b.Property<string>("MeasureUnit")
-                        .HasMaxLength(24)
-                        .HasColumnType("varchar(24)");
-
-                    b.Property<DateTime?>("NotReachedAt")
-                        .HasColumnType("datetime(6)");
-
                     b.Property<Guid>("PlanVersionId")
                         .HasColumnType("char(36)");
-
-                    b.Property<DateTime?>("ReachedAt")
-                        .HasColumnType("datetime(6)");
 
                     b.Property<string>("ReachedWhen")
                         .IsRequired()
@@ -550,6 +434,9 @@ namespace Waypoint.Api.Data.Migrations
 
             modelBuilder.Entity("Waypoint.Api.Data.PlanTask", b =>
                 {
+                    b.Property<string>("GuideJson")
+                        .HasColumnType("longtext");
+
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("char(36)");
@@ -587,6 +474,9 @@ namespace Waypoint.Api.Data.Migrations
 
             modelBuilder.Entity("Waypoint.Api.Data.PlanVersion", b =>
                 {
+                    b.Property<string>("GuideLogJson")
+                        .HasColumnType("longtext");
+
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("char(36)");
@@ -691,6 +581,9 @@ namespace Waypoint.Api.Data.Migrations
 
             modelBuilder.Entity("Waypoint.Api.Data.ScheduledAction", b =>
                 {
+                    b.Property<string>("GuideJson")
+                        .HasColumnType("longtext");
+
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("char(36)");
@@ -736,10 +629,6 @@ namespace Waypoint.Api.Data.Migrations
 
                     b.Property<Guid?>("TaskId")
                         .HasColumnType("char(36)");
-
-                    b.Property<string>("TestForMilestoneRef")
-                        .HasMaxLength(32)
-                        .HasColumnType("varchar(32)");
 
                     b.Property<string>("Title")
                         .IsRequired()
@@ -893,36 +782,6 @@ namespace Waypoint.Api.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("DeviceTokens");
-                });
-
-            modelBuilder.Entity("Waypoint.Api.Coach.MeasureReading", b =>
-                {
-                    b.HasOne("Waypoint.Api.Data.Aspiration", null)
-                        .WithMany()
-                        .HasForeignKey("AspirationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Waypoint.Api.Data.User", null)
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Waypoint.Api.Coach.ProgressReading", b =>
-                {
-                    b.HasOne("Waypoint.Api.Data.Aspiration", null)
-                        .WithMany()
-                        .HasForeignKey("AspirationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Waypoint.Api.Data.User", null)
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("Waypoint.Api.Data.Aspiration", b =>

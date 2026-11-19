@@ -15,7 +15,9 @@ public sealed class FakeCoachModelClient : ICoachModelClient
     public void Enqueue(params string[] chunks) => Script.Enqueue(chunks);
 
     /// <summary>Answers a request itself when it returns chunks, before <see cref="Script"/>; for tests with many jobs in flight.</summary>
-    public Func<CoachRequest, string[]?>? Responder { get; set; } = req => ReminderTextFor(req) ?? WeeklyRefreshFor(req) ?? NoteFor(req);
+    public Func<CoachRequest, string[]?>? Responder { get; set; }
+
+    public FakeCoachModelClient() => Responder = req => ReminderTextFor(req) ?? WeeklyRefreshFor(req) ?? GuideFor(req);
 
     /// <summary>The default responder: every reminder batch gets text for each Action in it, so those jobs never eat a scripted reply.</summary>
     public static string[]? ReminderTextFor(CoachRequest req)
@@ -25,21 +27,39 @@ public sealed class FakeCoachModelClient : ICoachModelClient
         return ["```json\n" + System.Text.Json.JsonSerializer.Serialize(new { reminders = ids.Select(id => new { id, text = "Easy run: shoes by the door." }) }) + "\n```"];
     }
 
-    /// <summary>Milestone and Measure notes: one line naming what the app asked it to say.</summary>
-    public static string[]? NoteFor(CoachRequest req)
+    /// <summary>Scripted replies for Guide calls, one per call. With none queued the Coach writes no Guides, so other tests never meet one.</summary>
+    public Queue<string> GuideScript { get; } = new();
+    public void EnqueueGuides(object reply) => GuideScript.Enqueue("```json\n" + System.Text.Json.JsonSerializer.Serialize(reply) + "\n```");
+
+    /// <summary>
+    /// Scripted replies for weekly-refresh Guide calls, each for the one refresh whose request contains its marker (text of that
+    /// test's own Guide). Refreshes of other tests' users, which come due on the same fake clock, never take it.
+    /// </summary>
+    public List<(string Marker, string Reply)> RefreshGuideScript { get; } = [];
+    public void EnqueueRefreshGuides(string marker, object reply) =>
+        RefreshGuideScript.Add((marker, "```json\n" + System.Text.Json.JsonSerializer.Serialize(reply) + "\n```"));
+
+    public string[]? GuideFor(CoachRequest req)
     {
-        if (req.Kind is not (CoachCallKind.MilestoneNote or CoachCallKind.MeasureNote)) return null;
-        return ["Coach says " + System.Text.Json.JsonDocument.Parse(req.Turns[0].Text).RootElement.GetProperty("say").GetString()];
+        if (req.Kind != CoachCallKind.Guide) return null;
+        if (req.Turns[0].Text.Contains("\"mode\":\"refresh\""))
+        {
+            var at = RefreshGuideScript.FindIndex(r => req.Turns[0].Text.Contains(r.Marker));
+            if (at < 0) return ["```json\n{\"guides\":[]}\n```"];
+            var reply = RefreshGuideScript[at].Reply;
+            RefreshGuideScript.RemoveAt(at);
+            return [reply];
+        }
+        return [GuideScript.Count > 0 ? GuideScript.Dequeue() : "```json\n{\"guides\":[]}\n```"];
     }
 
     /// <summary>The weekly refresh call: a rationale and a reason for every change code it was given.</summary>
     public static string[]? WeeklyRefreshFor(CoachRequest req)
     {
         if (req.Kind != CoachCallKind.WeeklyRefresh) return null;
-        var root = System.Text.Json.JsonDocument.Parse(req.Turns[0].Text).RootElement;
-        var codes = root.GetProperty("changes").EnumerateArray().Select(c => c.GetProperty("code").GetString()!).ToList();
-        var standing = root.TryGetProperty("progress", out var p) ? "Where you stand: " + p.GetProperty("state").GetString() : null;
-        return ["```json\n" + System.Text.Json.JsonSerializer.Serialize(new { rationale = "Next week, gently.", reasons = codes.ToDictionary(c => c, c => "You kept up, so a small step."), standing }) + "\n```"];
+        var codes = System.Text.Json.JsonDocument.Parse(req.Turns[0].Text).RootElement.GetProperty("changes").EnumerateArray()
+            .Select(c => c.GetProperty("code").GetString()!).ToList();
+        return ["```json\n" + System.Text.Json.JsonSerializer.Serialize(new { rationale = "Next week, gently.", reasons = codes.ToDictionary(c => c, c => "You kept up, so a small step.") }) + "\n```"];
     }
 
     public async IAsyncEnumerable<string> StreamAsync(CoachRequest request, [EnumeratorCancellation] CancellationToken ct)

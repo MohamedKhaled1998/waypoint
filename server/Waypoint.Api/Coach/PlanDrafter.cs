@@ -145,6 +145,8 @@ public sealed class PlanDrafter(WaypointDb db, JobQueue jobs, ICoachModelClient 
         db.ChatMessages.Add(proposal);
         // "Plan ready" goes out as its own job, so a push failure never redrafts the Plan.
         jobs.Add(JobKinds.PushMessage, aspiration.UserId, new Dictionary<string, Guid> { ["chatMessageId"] = proposal.Id }, aspiration.Id);
+        // Guides are written on their own job: a slow or failing model never holds up the Plan, and a Guide is optional.
+        jobs.Add(JobKinds.GuideWrite, aspiration.UserId, new Dictionary<string, Guid> { ["planVersionId"] = version.Id }, aspiration.Id);
         await db.SaveChangesAsync(ct);
         log.LogInformation("Plan version {PlanVersionId} proposed for Aspiration {AspirationId}", version.Id, aspiration.Id);
     }

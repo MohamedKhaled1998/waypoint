@@ -17,18 +17,12 @@ public static class RefreshPrompt
         Aspiration's short name, whether the last two weeks were mostly done, and "changes": a list of codes the app
         made (empty when nothing changed). Never change, add or question a decision, and never invent numbers.
 
-        When the JSON has "progress", the app has judged where the user stands: "state" (too_early, on_track, slipping,
-        ahead, past_settle_for), "previous_state", "pace" in words and the projected window in words. Add "standing": ONE
-        short sentence in the Coach's voice, saying the state change ("say": "state_change") or where they stand
-        ("say": "where_you_stand"). Speak of effort and time, never percentages or odds, and never of the outcome itself.
-        Never decide a state or a date yourself; say only what "progress" holds.
-
         Voice: warm, plain, brief, forgiving, second person, no emojis, no guilt, no streaks.
 
         Reply with exactly one fenced json block and nothing else:
 
         ```json
-        { "rationale": "two or three sentences on next week and why", "reasons": { "<change code>": "one short sentence" }, "standing": "only when progress is given" }
+        { "rationale": "two or three sentences on next week and why", "reasons": { "<change code>": "one short sentence" } }
         ```
         Give a reason for every code in "changes".
         """;
@@ -131,7 +125,7 @@ public static class WeeklyRefreshes
 }
 
 /// <summary>The refresh job: measures, ramps, lays out the next two weeks and stores one proposal per Aspiration.</summary>
-public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ProgressCalculator progress, ICoachModelClient model, IOptions<CoachOptions> options, TimeProvider clock,
+public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ICoachModelClient model, IOptions<CoachOptions> options, TimeProvider clock,
     ILogger<WeeklyRefreshRunner> log)
 {
     private sealed record H(Guid OldId, string Title, int Times, int Minutes, List<Guid> SlotIds);
@@ -152,15 +146,12 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ProgressCa
         // Minutes already taken in each Slot on each day, by what the refresh keeps: other Aspirations and Check-ins already made.
         var plannedIds = planned.Select(a => a.Id).ToHashSet();
         var used = new Dictionary<(DateOnly, Guid), int>();
-        foreach (var a in await db.ScheduledActions.Where(a => a.Date >= start && (!plannedIds.Contains(a.AspirationId) || a.TestForMilestoneRef != null || db.CheckIns.Any(c => c.ScheduledActionId == a.Id))).ToListAsync(ct))
+        foreach (var a in await db.ScheduledActions.Where(a => a.Date >= start && (!plannedIds.Contains(a.AspirationId) || db.CheckIns.Any(c => c.ScheduledActionId == a.Id))).ToListAsync(ct))
             used[(a.Date, a.SlotId)] = used.GetValueOrDefault((a.Date, a.SlotId)) + a.Minutes;
 
         var made = new List<PlanVersion>();
         foreach (var aspiration in planned)
-        {
-            var note = await JudgeAsync(aspiration, start, now, refresh.Id, ct);
-            made.Add(await ProposeAsync(aspiration, currents.First(p => p.AspirationId == aspiration.Id), slots, used, start, now, refresh.Id, note, ct));
-        }
+            made.Add(await ProposeAsync(aspiration, currents.First(p => p.AspirationId == aspiration.Id), slots, used, start, now, refresh.Id, ct));
 
         refresh.Status = RefreshStatus.Open;
         refresh.OpenedAt = now;
@@ -168,22 +159,13 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ProgressCa
         var ids = new Dictionary<string, Guid> { ["refreshId"] = refresh.Id };
         jobs.Add(JobKinds.RefreshApply, refresh.UserId, ids, delay: WeeklyRefreshes.AutoApplyAfter);
         if (made.Count > 0) jobs.Add(JobKinds.RefreshPrompt, refresh.UserId, ids);
-        // A Measure is read about every four weeks: the Coach asks in chat, and the reply is saved as a reading.
-        foreach (var a in planned)
-        {
-            var current = currents.First(p => p.AspirationId == a.Id);
-            if (!await db.Milestones.AnyAsync(m => m.PlanVersionId == current.Id && m.MeasureName != null, ct)) continue;
-            var last = await db.MeasureReadings.Where(r => r.AspirationId == a.Id).Select(r => (DateOnly?)r.Date).MaxAsync(ct);
-            if (last is null || DateOnly.FromDateTime(now).DayNumber - last.Value.DayNumber >= MeasureMath.AskAfterDays)
-                jobs.Add(JobKinds.MeasureAsk, refresh.UserId, new Dictionary<string, Guid> { ["aspirationId"] = a.Id }, a.Id);
-        }
         await WeeklyRefreshes.ScheduleNextAsync(db, jobs, clock, now, ct, finishing: refresh.Id);
         await db.SaveChangesAsync(ct);
         log.LogInformation("Weekly refresh {RefreshId} proposed {Count} versions", refresh.Id, made.Count);
     }
 
     private async Task<PlanVersion> ProposeAsync(Aspiration aspiration, PlanVersion current, Dictionary<Guid, Slot> slots,
-        Dictionary<(DateOnly, Guid), int> used, DateOnly start, DateTime now, Guid refreshId, ProgressNote note, CancellationToken ct)
+        Dictionary<(DateOnly, Guid), int> used, DateOnly start, DateTime now, Guid refreshId, CancellationToken ct)
     {
         // Mostly done: both of the last two weeks reached 80% of their planned minutes.
         var weekOf = async (int back) => await MostlyDoneAsync(aspiration.Id, start.AddDays(-7 * back), start.AddDays(-7 * (back - 1)), ct);
@@ -214,9 +196,7 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ProgressCa
         var milestoneIds = new Dictionary<Guid, Guid>();
         var newMilestones = oldMilestones.Select(m =>
         {
-            var copy = new Milestone { Id = Guid.NewGuid(), UserId = m.UserId, PlanVersionId = version.Id, Ref = m.Ref, Date = m.Date, Title = m.Title, ReachedWhen = m.ReachedWhen, Kind = m.Kind, State = m.State,
-                ReachedAt = m.ReachedAt, AskedAt = m.AskedAt, NotReachedAt = m.NotReachedAt,
-                MeasureName = m.MeasureName, MeasureUnit = m.MeasureUnit, MeasureStart = m.MeasureStart, MeasureHopedFor = m.MeasureHopedFor };
+            var copy = new Milestone { Id = Guid.NewGuid(), UserId = m.UserId, PlanVersionId = version.Id, Ref = m.Ref, Date = m.Date, Title = m.Title, ReachedWhen = m.ReachedWhen, Kind = m.Kind, State = m.State };
             milestoneIds[m.Id] = copy.Id;
             return copy;
         }).ToList();
@@ -224,7 +204,7 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ProgressCa
         var habitRows = habits.Select(h => (H: h, New: new Habit
         {
             Id = Guid.NewGuid(), UserId = aspiration.UserId, PlanVersionId = version.Id, Title = h.Title, TimesPerWeek = h.Times, Minutes = h.Minutes,
-            SlotIds = string.Join(",", h.SlotIds),
+            SlotIds = string.Join(",", h.SlotIds), GuideJson = oldHabits.First(o => o.Id == h.OldId).GuideJson,
         })).ToList();
 
         // Reminders carry over: a habit's new sessions keep how its latest one was set.
@@ -265,7 +245,7 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ProgressCa
         var taskRows = new List<PlanTask>();
         foreach (var t in oldTasks)
         {
-            var copy = new PlanTask { Id = Guid.NewGuid(), UserId = t.UserId, PlanVersionId = version.Id, MilestoneId = milestoneIds[t.MilestoneId], Title = t.Title, Minutes = t.Minutes, DueDate = t.DueDate };
+            var copy = new PlanTask { Id = Guid.NewGuid(), UserId = t.UserId, PlanVersionId = version.Id, MilestoneId = milestoneIds[t.MilestoneId], Title = t.Title, Minutes = t.Minutes, DueDate = t.DueDate, GuideJson = t.GuideJson };
             taskRows.Add(copy);
             if (scheduledBefore.Contains(t.Title) || (t.DueDate is { } d && d > windowEnd)) continue;
             if (PlaceTask(t, slots, used, start, windowEnd) is { } at)
@@ -284,21 +264,16 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ProgressCa
             ["at_full_share"] = habits.Sum(h => h.Times * h.Minutes) >= full,
             ["changes"] = new JsonArray(changes.Select(c => (JsonNode)new JsonObject { ["code"] = c["code"]!.GetValue<string>(), ["what"] = c["title"]!.GetValue<string>(), ["field"] = c["field"]!.GetValue<string>() }).ToArray()),
         };
-        if (note.Say) brief["progress"] = note.Brief;
-        var (rationale, reasons, standing) = await PhraseAsync(brief, changes.Select(c => c["code"]!.GetValue<string>()).ToList(), note.Say, ct);
+        var (rationale, reasons) = await PhraseAsync(brief, changes.Select(c => c["code"]!.GetValue<string>()).ToList(), ct);
         version.Rationale = rationale;
-        if (note.Say)
-            db.ChatMessages.Add(new ChatMessage
-            {
-                Id = Guid.NewGuid(), UserId = aspiration.UserId, Role = "coach", Text = standing!, AspirationId = aspiration.Id, CreatedAt = now,
-            });
         foreach (var c in changes) c["reason"] = reasons[c["code"]!.GetValue<string>()];
+        changes.AddRange(await RefreshGuidesAsync(aspiration, habitRows.Select(r => r.New).ToList(), taskRows, mostly, ct));
         version.ChangesJson = new JsonObject
         {
             ["changes"] = new JsonArray(changes.ToArray<JsonNode?>()),
             ["stays"] = new JsonArray(
                 oldMilestones.Select(m => (JsonNode)new JsonObject { ["what"] = "milestone", ["title"] = m.Title, ["date"] = m.Date.ToString("yyyy-MM-dd") })
-                    .Concat(habits.Where(h => !changes.Any(c => c["title"]!.GetValue<string>() == h.Title))
+                    .Concat(habits.Where(h => !changes.Any(c => c["what"]!.GetValue<string>() == "habit" && c["title"]!.GetValue<string>() == h.Title))
                         .Select(h => (JsonNode)new JsonObject { ["what"] = "habit", ["title"] = h.Title, ["times_per_week"] = h.Times, ["minutes"] = h.Minutes })).ToArray()),
         }.ToJsonString();
 
@@ -312,44 +287,58 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ProgressCa
         return version;
     }
 
-    private sealed record ProgressNote(bool Say, JsonObject Brief);
-
-    /// <summary>Step 3 of the refresh: Pace and Projection, then the state, stored for the next refresh to compare with.</summary>
-    private async Task<ProgressNote> JudgeAsync(Aspiration a, DateOnly start, DateTime now, Guid refreshId, CancellationToken ct)
+    /// <summary>
+    /// "Here's what I changed" for Guides: the Coach progresses each Guide by a small step, and only changes that pass
+    /// <see cref="GuideRules"/> (against the Guide they replace) are kept, with the Coach's reason. A reply the Coach can't
+    /// give throws, so the refresh is late rather than silent about Guides.
+    /// </summary>
+    private async Task<List<JsonObject>> RefreshGuidesAsync(Aspiration aspiration, List<Habit> habits, List<PlanTask> tasks, bool[] mostly, CancellationToken ct)
     {
-        var snap = await progress.ComputeAsync(a, start, ct);
-        var number = snap.Readings + 1;
-        var tooEarly = number <= ProgressMath.TooEarlyRefreshes;
-        var middleOver = !tooEarly && snap is { Next: { } next, NextProjection: { } np } && np.Middle > next.Date;
-        var lateEarly = !tooEarly && snap is { Next: { } n2, NextProjection: { } p2 } && p2.Late.AddDays(7) <= n2.Date;
-        var pastSettle = !tooEarly && a.SettleForDate is { } settle && snap.FinalProjection is { } fp && fp.Early > settle;
-        var state = ProgressMath.Judge(number, middleOver, lateEarly, pastSettle, snap.Latest);
+        var current = habits.Where(h => h.GuideJson != null).Select(h => (h.Title, Set: (Action<string>)(g => h.GuideJson = g), Json: h.GuideJson!))
+            .Concat(tasks.Where(t => t.GuideJson != null).Select(t => (t.Title, Set: (Action<string>)(g => t.GuideJson = g), Json: t.GuideJson!))).ToList();
+        if (current.Count == 0) return [];
 
-        var changed = snap.Latest is not null && snap.Latest.State != state;
-        var recent = await db.ProgressReadings.AnyAsync(r => r.AspirationId == a.Id && r.Spoke && r.At > now.AddDays(-MonthlyAfterDays), ct);
-        var monthly = !changed && !tooEarly && !recent;
-        db.ProgressReadings.Add(new ProgressReading
-        {
-            Id = Guid.NewGuid(), UserId = a.UserId, AspirationId = a.Id, RefreshId = refreshId, PlanVersionId = snap.Current?.Id, At = now, Pace = snap.Pace,
-            State = state, MiddleOver = middleOver, LateEarly = lateEarly, PastSettleFor = pastSettle, Spoke = changed || monthly,
-        });
+        var interview = await db.Interviews.Where(i => i.AspirationId == aspiration.Id && i.HandOffJson != null).OrderByDescending(i => i.CreatedAt).FirstOrDefaultAsync(ct);
+        var about = GuideRules.About(interview?.HandOffJson);
         var brief = new JsonObject
         {
-            ["say"] = changed ? "state_change" : "where_you_stand",
-            ["state"] = state,
-            ["previous_state"] = snap.Latest?.State,
-            ["pace"] = ProgressMath.PaceWords(snap.Pace),
-            ["next_milestone"] = snap.Next?.Title,
+            ["mode"] = "refresh",
+            ["domain_picture"] = (JsonNode.Parse(interview?.HandOffJson ?? "{}")?["aspiration"]?["domain_picture"])?.DeepClone(),
+            ["last_two_weeks_mostly_done"] = new JsonArray(mostly.Select(m => (JsonNode)m).ToArray()),
+            ["guides"] = new JsonArray(current.Select(c => (JsonNode)new JsonObject { ["action"] = c.Title, ["guide"] = JsonNode.Parse(c.Json) }).ToArray()),
         };
-        if (!tooEarly && snap.NextProjection is { } proj)
-        {
-            brief["projected_from"] = $"{ProgressMath.PartOfMonth(proj.Early)} {proj.Early:MMMM}";
-            brief["projected_to"] = $"{ProgressMath.PartOfMonth(proj.Late)} {proj.Late:MMMM}";
-        }
-        return new ProgressNote(changed || monthly, brief);
-    }
+        var choice = options.Value.For(CoachCallKind.Guide);
+        var reply = new StringBuilder();
+        await foreach (var chunk in model.StreamAsync(new CoachRequest(CoachCallKind.Guide, choice.Provider, choice.Model, GuidePrompt.System,
+            [new CoachTurn("user", brief.ToJsonString())]), ct))
+            reply.Append(chunk);
+        if (GuideRules.ParseObject(reply.ToString())?["guides"] is not JsonArray list) throw new CoachUnavailableException("guide_reply_invalid");
 
-    private const int MonthlyAfterDays = 28;
+        var made = new List<JsonObject>();
+        var accepted = new HashSet<string>();
+        foreach (var item in list.OfType<JsonObject>())
+        {
+            var title = HandOff.Str(item, "action");
+            var reason = HandOff.Str(item, "reason");
+            var was = current.FirstOrDefault(c => c.Title == title);
+            if (was.Title is null || string.IsNullOrWhiteSpace(reason) || accepted.Contains(title!)) continue;
+            var before = JsonNode.Parse(was.Json)!.AsObject();
+            var problems = GuideRules.Validate(item, about, before);
+            if (problems.Count > 0)
+            {
+                log.LogInformation("Guide change for Aspiration {AspirationId} dropped: {Problems}", aspiration.Id, string.Join(",", problems));
+                continue;
+            }
+            var next = GuideRules.Normalise(item);
+            if (next.ToJsonString() == before.ToJsonString()) continue;
+            // The referral is kept as it was unless something new happened; a changed one shows as a new card.
+            was.Set(next.ToJsonString());
+            accepted.Add(title!);
+            made.Add(new JsonObject { ["code"] = "guide_changed", ["what"] = "guide", ["title"] = title, ["reason"] = reason!.Trim() });
+        }
+        // A changed referral shows as a card when the proposal is approved (see Plans.Approve), not while it is drafted.
+        return made;
+    }
 
     private async Task<bool> MostlyDoneAsync(Guid aspirationId, DateOnly from, DateOnly toExclusive, CancellationToken ct)
     {
@@ -424,7 +413,7 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ProgressCa
         return first;
     }
 
-    private async Task<(string Rationale, Dictionary<string, string> Reasons, string? Standing)> PhraseAsync(JsonObject brief, List<string> codes, bool needStanding, CancellationToken ct)
+    private async Task<(string Rationale, Dictionary<string, string> Reasons)> PhraseAsync(JsonObject brief, List<string> codes, CancellationToken ct)
     {
         var choice = options.Value.For(CoachCallKind.WeeklyRefresh);
         var reply = new StringBuilder();
@@ -439,11 +428,9 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ProgressCa
         var rationale = parsed is null ? null : HandOff.Str(parsed, "rationale");
         var reasons = (parsed?["reasons"] as JsonObject)?.ToDictionary(p => p.Key, p => p.Value?.GetValue<string>() ?? "") ?? [];
         // Late, never faked: a reply without words for every change fails the job, which retries.
-        var standing = parsed is null ? null : HandOff.Str(parsed, "standing");
-        if (string.IsNullOrWhiteSpace(rationale) || codes.Any(c => !reasons.TryGetValue(c, out var r) || string.IsNullOrWhiteSpace(r))
-            || (needStanding && string.IsNullOrWhiteSpace(standing)))
+        if (string.IsNullOrWhiteSpace(rationale) || codes.Any(c => !reasons.TryGetValue(c, out var r) || string.IsNullOrWhiteSpace(r)))
             throw new CoachUnavailableException("refresh_reply_invalid");
-        return (rationale, reasons, standing);
+        return (rationale, reasons);
     }
 }
 

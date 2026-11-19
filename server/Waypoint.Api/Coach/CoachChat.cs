@@ -17,7 +17,19 @@ public static class CoachChat
     // The stable system part: no user data, so it caches. Never add the user's name or email.
     public const string SystemPrompt =
         "You are the Coach in Waypoint, a personal coaching app. You help the user reach their Aspirations " +
-        "with warmth and honesty. Keep replies short and plain. Never invent facts about the user's progress.";
+        "with warmth and honesty. Keep replies short and plain. Never invent facts about the user's progress.\n\n" +
+        "Guides: the app may show \"Current Guides\" (JSON) after the user's message. When the user asks to change a Guide, " +
+        "say briefly what you changed, then on a new line write " + GuideEdits.Marker + " followed by one json object " +
+        "{\"action\": the Action's title, \"reason\": one short sentence, \"guide\": {\"body\", \"targets\", \"withheld\", \"referral\"}} " +
+        "with the whole new Guide (same shape and rules as always: about 60-180 words, ranges with reasons, never a daily calorie " +
+        "target under 1,500 kcal for men or unknown / 1,200 for women, no deficit over about 500 kcal a day, load up by at most " +
+        "one small step). Never write the marker for anything else. If a Check-in doesn't match the Guide, ask what happened; " +
+        "never rewrite the Guide on a guess.\n" +
+        "Red flags (pain or a new injury, dizziness or chest symptoms, a condition or medication in play, pregnancy, signs of " +
+        "disordered eating, a request for a diagnosis): give no amounts, timing or load in that area, load nothing that touches an " +
+        "injured part, keep helping with everything else, offer to ease or Pause the affected Actions, and point to a doctor, " +
+        "physio or dietitian warmly and once. If a message suggests a crisis, drop coaching and point to real help (a local " +
+        "emergency number or crisis line) instead.";
 
     public static void MapCoachChat(this WebApplication app)
     {
@@ -43,7 +55,7 @@ public static class CoachChat
     };
 
     private static async Task Send(SendMessageRequest req, HttpContext http, WaypointDb db, CurrentUser me,
-        ICoachModelClient model, IOptions<CoachOptions> options, TimeProvider clock, ILoggerFactory logs, JobQueue jobs)
+        ICoachModelClient model, IOptions<CoachOptions> options, TimeProvider clock, ILoggerFactory logs)
     {
         var log = logs.CreateLogger("Waypoint.Coach.Chat");
         var ct = http.RequestAborted;
@@ -62,9 +74,6 @@ public static class CoachChat
                 AspirationId = req.AspirationId, ClientId = req.ClientId, CreatedAt = clock.GetUtcNow().UtcDateTime,
             };
             db.ChatMessages.Add(user);
-            await db.SaveChangesAsync(ct);
-            // A reply to a Measure question is also a reading.
-            await Measures.CaptureReplyAsync(db, clock, jobs, user, ct);
             await db.SaveChangesAsync(ct);
         }
 
@@ -90,19 +99,26 @@ public static class CoachChat
                 .OrderByDescending(m => m.Seq).Take(WindowSize).OrderBy(m => m.Seq).ToListAsync(ct);
             var turns = window.SkipWhile(m => m.Role != "user")
                 .Select(m => new CoachTurn(m.Role == "user" ? "user" : "assistant", m.Text)).ToList();
+            if (await GuideEdits.ContextAsync(db, ct) is { } guides && turns.Count > 0)
+                turns[^1] = turns[^1] with { Text = turns[^1].Text + "\n\n[Current Guides: " + guides + "]" };
+            var filter = new MarkerFilter(GuideEdits.Marker);
 
             await foreach (var chunk in model.StreamAsync(
                 new CoachRequest(CoachCallKind.Chat, choice.Provider, choice.Model, SystemPrompt, turns), ct))
             {
-                reply.Append(chunk);
-                await Write(http, "delta", new { text = chunk }, ct);
+                if (filter.Feed(chunk) is { Length: > 0 } show) await Write(http, "delta", new { text = show }, ct);
             }
+            if (filter.Flush() is { Length: > 0 } rest) await Write(http, "delta", new { text = rest }, ct);
+            reply.Append(filter.Visible.ToString().TrimEnd());
             if (reply.Length == 0) throw new CoachUnavailableException("empty_reply");
+            (Guid AspirationId, System.Text.Json.Nodes.JsonObject Card)? edited = filter.Marked
+                ? await GuideEdits.ApplyAsync(db, clock, filter.Payload.ToString(), user.AspirationId, ct) : null;
 
             var coach = new ChatMessage
             {
                 Id = Guid.NewGuid(), UserId = user.UserId, Role = "coach", Text = reply.ToString(),
                 AspirationId = user.AspirationId, InReplyToId = user.Id, CreatedAt = clock.GetUtcNow().UtcDateTime,
+                Card = edited is null ? null : "guide", CardJson = edited?.Card.ToJsonString(),
             };
             db.ChatMessages.Add(coach);
             await db.SaveChangesAsync(ct);

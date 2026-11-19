@@ -32,16 +32,12 @@ builder.Services.AddScoped<PushNotifier>();
 builder.Services.AddScoped<CoachMessenger>();
 
 builder.Services.AddScoped<JobQueue>();
-builder.Services.AddScoped<ProgressCalculator>();
 builder.Services.AddScoped<PlanDrafter>();
 builder.Services.AddScoped<ReminderWriter>();
+builder.Services.AddScoped<GuideWriter>();
 builder.Services.AddScoped<WeeklyRefreshRunner>();
 builder.Services.AddScoped<RefreshApplier>();
 builder.Services.AddScoped<CheckInReplies>();
-builder.Services.AddScoped<MilestoneService>();
-builder.Services.AddScoped<MilestoneNotes>();
-builder.Services.AddScoped<MeasureNotes>();
-builder.Services.AddScoped<MeasureStore>();
 builder.Services.AddSingleton<JobRunner>();
 if (builder.Configuration.GetValue("Jobs:Worker:Enabled", true)) builder.Services.AddHostedService<JobWorker>();
 
@@ -119,9 +115,6 @@ app.MapCoachChat();
 app.MapInterviews();
 app.MapPlans();
 app.MapWeeklyRefreshes();
-app.MapProgress();
-app.MapMilestones();
-app.MapMeasures();
 app.MapCheckIns();
 app.MapSync();
 app.MapPushes();

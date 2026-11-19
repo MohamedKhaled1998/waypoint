@@ -10,15 +10,11 @@ public static class JobKinds
     public const string Plan = "plan";
     public const string CheckInReply = "check_in_reply";
     public const string ReminderText = "reminder_text";
+    public const string GuideWrite = "guide_write";
     public const string PushMessage = "push_message";
     public const string WeeklyRefresh = "weekly_refresh";
     public const string RefreshApply = "refresh_apply";
     public const string RefreshPrompt = "refresh_prompt";
-    public const string MilestoneDue = "milestone_due";
-    public const string MilestoneTestTask = "milestone_test_task";
-    public const string MilestoneNote = "milestone_note";
-    public const string MeasureCheck = "measure_check";
-    public const string MeasureAsk = "measure_ask";
 }
 
 /// <summary>Adds jobs. Payloads are row IDs only, so no free text can reach the jobs table.</summary>
@@ -89,6 +85,9 @@ public sealed class JobRunner(IServiceScopeFactory scopes, TimeProvider clock, I
                 case JobKinds.ReminderText:
                     await sp.GetRequiredService<ReminderWriter>().WriteAsync(ids["planVersionId"], ct);
                     break;
+                case JobKinds.GuideWrite:
+                    await sp.GetRequiredService<GuideWriter>().WriteAsync(ids["planVersionId"], ct);
+                    break;
                 case JobKinds.PushMessage:
                     await sp.GetRequiredService<Waypoint.Api.Push.PushNotifier>().SendForMessageAsync(ids["chatMessageId"], ct);
                     break;
@@ -100,21 +99,6 @@ public sealed class JobRunner(IServiceScopeFactory scopes, TimeProvider clock, I
                     break;
                 case JobKinds.RefreshPrompt:
                     await sp.GetRequiredService<Waypoint.Api.Push.PushNotifier>().SendRefreshPromptAsync(ids["refreshId"], ct);
-                    break;
-                case JobKinds.MilestoneDue:
-                    await sp.GetRequiredService<MilestoneService>().DueAsync(ids["milestoneId"], ct);
-                    break;
-                case JobKinds.MilestoneTestTask:
-                    await sp.GetRequiredService<MilestoneService>().PlaceTestTaskAsync(ids["milestoneId"], ct);
-                    break;
-                case JobKinds.MilestoneNote:
-                    await sp.GetRequiredService<MilestoneNotes>().WriteAsync(ids["milestoneId"], ct);
-                    break;
-                case JobKinds.MeasureCheck:
-                    await sp.GetRequiredService<MeasureNotes>().CheckAsync(ids["readingId"], ct);
-                    break;
-                case JobKinds.MeasureAsk:
-                    await sp.GetRequiredService<MeasureNotes>().AskAsync(ids["aspirationId"], ct);
                     break;
                 default:
                     throw new InvalidOperationException("unknown_job_kind");

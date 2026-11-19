@@ -70,6 +70,25 @@ export default function CoachScreen() {
         </Card>
       );
     }
+    if (item.message.card === 'guide' && item.message.cardData?.guide) {
+      const data = item.message.cardData;
+      const areas = (data.guide.withheld ?? []).map(withheldArea).join(', ');
+      return (
+        <Card hue={data.hue}>
+          <Text variant="heading">{t('coach.guideTitle', { action: data.action })}</Text>
+          <Text>{data.guide.body}</Text>
+          {areas ? <Text muted>{t('coach.guideWithheld', { areas })}</Text> : null}
+        </Card>
+      );
+    }
+    if (item.message.card === 'referral') {
+      return (
+        <Card hue={item.message.cardData?.hue}>
+          <Text variant="heading">{t('coach.referralTitle')}</Text>
+          <Text>{item.message.text}</Text>
+        </Card>
+      );
+    }
     const mine = item.message.role === 'user';
     return (
       <View style={styles.row}>
@@ -160,3 +179,7 @@ const styles = StyleSheet.create((theme) => ({
   sendButton: { paddingHorizontal: theme.space.lg, paddingVertical: theme.space.md, borderRadius: theme.radii.pill, backgroundColor: theme.colors.accent },
   sendText: { color: theme.colors.onAccent },
 }));
+
+function withheldArea(w: { area: string }): string {
+  return w.area;
+}

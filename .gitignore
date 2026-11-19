@@ -10,3 +10,4 @@ dist/
 .sandcastle-*.md
 secrets/
 app/google-services.json
+evals/guides/out/
