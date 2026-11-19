@@ -23,6 +23,13 @@ public static class RefreshPrompt
         ("say": "where_you_stand"). Speak of effort and time, never percentages or odds, and never of the outcome itself.
         Never decide a state or a date yourself; say only what "progress" holds.
 
+        When "progress" holds "dates" ("say": "dates_proposal"), the app has put a proposal in front of the user: the listed
+        Milestones would move later or earlier. Say it as a proposal the user decides on, never as done, and say if it is
+        capped at the Settle-for date. When it holds "choice", the final Milestone looks out of reach even at the
+        optimistic end: put the honest choice calmly, as three options and nothing moving until the user says so (move the
+        date, keep the date with a smaller picture (name "settle_for_picture" up front when given), or make more room by
+        giving the Aspiration a bigger share of the Time budget). Never blame, never promise.
+
         Voice: warm, plain, brief, forgiving, second person, no emojis, no guilt, no streaks. When a change is about a
         skip, give one line of acknowledgement and one next step, and never use the words "missed", "failed" or "streak".
 
@@ -544,10 +551,34 @@ public sealed partial class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, Pr
         var (rationale, reasons, standing) = await PhraseAsync(brief, changes.Concat(offers).Select(c => c["code"]!.GetValue<string>()).Distinct().ToList(), say, ct);
         version.Rationale = rationale;
         if (say)
-            db.ChatMessages.Add(new ChatMessage
+        {
+            var line = new ChatMessage
             {
                 Id = Guid.NewGuid(), UserId = aspiration.UserId, Role = "coach", Text = standing!, AspirationId = aspiration.Id, CreatedAt = now,
-            });
+            };
+            if (note!.Shifts.Count > 0)
+            {
+                // Dates move only by proposal: a version waiting in Plan review, and a card in the chat that opens it.
+                var dates = await DateProposals.ProposeAsync(db, aspiration, current, note.DatesReason!, note.Shifts, start, now, standing!, ct);
+                line.Card = "proposal";
+                line.CardJson = new JsonObject
+                {
+                    ["planVersionId"] = dates.Id, ["aspirationId"] = aspiration.Id, ["shortName"] = aspiration.ShortName, ["hue"] = aspiration.Hue,
+                    ["kind"] = note.DatesReason,
+                }.ToJsonString();
+            }
+            else if (note.SettleChoice)
+            {
+                line.Card = DateProposals.SettleChoiceCard;
+                line.CardJson = new JsonObject
+                {
+                    ["aspirationId"] = aspiration.Id, ["shortName"] = aspiration.ShortName, ["hue"] = aspiration.Hue,
+                    ["options"] = new JsonArray(DateProposals.SettleOptions.Select(o => (JsonNode)o).ToArray()),
+                    ["hasPicture"] = !string.IsNullOrWhiteSpace(aspiration.SettleForPicture),
+                }.ToJsonString();
+            }
+            db.ChatMessages.Add(line);
+        }
         foreach (var c in changes.Concat(offers)) c["reason"] = reasons[c["code"]!.GetValue<string>()];
         changes.AddRange(await RefreshGuidesAsync(aspiration, habitRows.Select(r => r.New).ToList(), taskRows, mostly, ct));
         version.ChangesJson = new JsonObject
@@ -561,7 +592,8 @@ public sealed partial class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, Pr
         }.ToJsonString();
 
         // At most one pending proposal per Aspiration: this one replaces any other.
-        await db.PlanVersions.Where(p => p.AspirationId == aspiration.Id && p.Status == PlanVersionStatus.Proposed)
+        await db.PlanVersions.Where(p => p.AspirationId == aspiration.Id && p.Status == PlanVersionStatus.Proposed
+                && p.Reason != DateProposals.Later && p.Reason != DateProposals.Earlier)
             .ExecuteUpdateAsync(s => s.SetProperty(p => p.Status, PlanVersionStatus.Replaced), ct);
         if (reason != Settings.BudgetChangeReason) await Settings.ClearStaleBudgetRequestAsync(db, ct);
         db.PlanVersions.Add(version);
@@ -648,7 +680,7 @@ public sealed partial class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, Pr
         return true;
     }
 
-    private sealed record ProgressNote(bool Say, JsonObject Brief);
+    private sealed record ProgressNote(bool Say, JsonObject Brief, List<DateShift> Shifts, string? DatesReason, bool SettleChoice);
 
     /// <summary>Step 3 of the refresh: Pace and Projection, then the state, stored for the next refresh to compare with.</summary>
     private async Task<ProgressNote> JudgeAsync(Aspiration a, DateOnly start, DateTime now, Guid refreshId, CancellationToken ct)
@@ -662,12 +694,28 @@ public sealed partial class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, Pr
         var state = ProgressMath.Judge(number, middleOver, lateEarly, pastSettle, snap.Latest);
 
         var changed = snap.Latest is not null && snap.Latest.State != state;
+
+        // Dates: Slipping proposes later ones (never past Settle-for), Ahead offers earlier ones once per Milestone. Past Settle-for is a choice, not a date.
+        var shifts = new List<DateShift>();
+        string? datesReason = null;
+        if (state == ProgressStates.Slipping && snap is { Next: not null, NextProjection: { } slip } && !await DateProposals.PendingAsync(db, a.Id, DateProposals.Later, ct))
+        {
+            shifts = DateProposals.Slip(snap.Milestones, slip.Middle, a.SettleForDate);
+            datesReason = DateProposals.Later;
+        }
+        else if (state == ProgressStates.Ahead && snap is { Next: { } ahead, NextProjection: { } fast } && !await DateProposals.OfferedEarlierAsync(db, a.Id, ahead.Ref, ct))
+        {
+            shifts = DateProposals.Sooner(snap.Milestones, fast.Late, start.AddDays(7));
+            datesReason = DateProposals.Earlier;
+        }
+        var settleChoice = state == ProgressStates.PastSettleFor && changed;
         var recent = await db.ProgressReadings.AnyAsync(r => r.AspirationId == a.Id && r.Spoke && r.At > now.AddDays(-MonthlyAfterDays), ct);
-        var monthly = !changed && !tooEarly && !recent;
+        var monthly = !changed && !tooEarly && !recent && shifts.Count == 0;
+        var say = changed || monthly || shifts.Count > 0;
         db.ProgressReadings.Add(new ProgressReading
         {
             Id = Guid.NewGuid(), UserId = a.UserId, AspirationId = a.Id, RefreshId = refreshId, PlanVersionId = snap.Current?.Id, At = now, Pace = snap.Pace,
-            State = state, MiddleOver = middleOver, LateEarly = lateEarly, PastSettleFor = pastSettle, Spoke = changed || monthly,
+            State = state, MiddleOver = middleOver, LateEarly = lateEarly, PastSettleFor = pastSettle, Spoke = say,
         });
         var brief = new JsonObject
         {
@@ -682,7 +730,20 @@ public sealed partial class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, Pr
             brief["projected_from"] = $"{ProgressMath.PartOfMonth(proj.Early)} {proj.Early:MMMM}";
             brief["projected_to"] = $"{ProgressMath.PartOfMonth(proj.Late)} {proj.Late:MMMM}";
         }
-        return new ProgressNote(changed || monthly, brief);
+        if (shifts.Count > 0)
+            brief["dates"] = new JsonObject
+            {
+                ["direction"] = datesReason == DateProposals.Later ? "later" : "earlier",
+                ["milestones"] = new JsonArray(shifts.Select(x => (JsonNode)new JsonObject
+                    { ["title"] = x.Title, ["from"] = x.Before.ToString("MMMM d"), ["to"] = x.After.ToString("MMMM d") }).ToArray()),
+                ["capped_at_settle_for"] = datesReason == DateProposals.Later && a.SettleForDate is { } cap && shifts.Any(x => x.After == cap),
+            };
+        if (settleChoice)
+        {
+            brief["choice"] = new JsonArray(DateProposals.SettleOptions.Select(o => (JsonNode)o).ToArray());
+            if (!string.IsNullOrWhiteSpace(a.SettleForPicture)) brief["settle_for_picture"] = a.SettleForPicture;
+        }
+        return new ProgressNote(say, brief, shifts, datesReason, settleChoice);
     }
 
     private const int MonthlyAfterDays = 28;

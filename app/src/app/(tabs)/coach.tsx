@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Pressable, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StyleSheet, useUnistyles } from 'react-native-unistyles';
 import { groupByDay, type ChatMessage } from '../../coach/chat';
 import { chipLabel, filterThread, quickReplies, tagOf } from '../../coach/threads';
@@ -16,6 +16,8 @@ import { useKeyboardHeight } from '../../coach/useKeyboardHeight';
 import { Banner } from '../../ui/Banner';
 import { Button } from '../../ui/Button';
 import { Card } from '../../ui/Card';
+import { isCoachIntent } from '../../progress/progress';
+import type { CoachContext } from '../../coach/chat';
 import { Text } from '../../ui/Text';
 
 type Row =
@@ -48,7 +50,16 @@ export default function CoachScreen() {
   const [filter, setFilter] = useState<string | null>(null);
   const shown = filterThread(messages, filter);
   const replies = filter === null ? quickReplies(messages) : [];
+  const params = useLocalSearchParams<{ aspirationId?: string; intent?: string; shortName?: string }>();
+  // Opened from an Aspiration: the message starts from what the user chose, and they decide whether to send it.
+  // The Aspiration the next message is about, and what the user chose: sent with the message so the Coach has the context.
+  const [scope, setScope] = useState<CoachContext | null>(null);
   const list = useRef<FlatList<Row>>(null);
+  useEffect(() => {
+    if (!params.aspirationId || !isCoachIntent(params.intent)) return;
+    setScope({ aspirationId: params.aspirationId, intent: params.intent });
+    setDraft(t(`coach.starters.${params.intent}`, { name: params.shortName ?? '' }));
+  }, [params.aspirationId, params.intent, params.shortName, t]);
 
   const rows = useMemo<Row[]>(() => {
     const today = new Date();
@@ -134,6 +145,22 @@ export default function CoachScreen() {
         </Card>
       );
     }
+    if (item.message.card === 'settle_choice' && item.message.cardData?.aspirationId) {
+      const data = item.message.cardData;
+      return (
+        <Card hue={data.hue}>
+          <Text variant="heading">{t('progress.settleChoice.title')}</Text>
+          <Text muted>{item.message.text}</Text>
+          {(data.options as unknown[]).filter(isCoachIntent).map((option) => (
+            <Button key={option} kind="secondary" title={t(`progress.settleChoice.options.${option}`)}
+              onPress={() => {
+                setScope({ aspirationId: String(data.aspirationId), intent: option });
+                setDraft(t(`coach.starters.${option}`, { name: data.shortName }));
+              }} />
+          ))}
+        </Card>
+      );
+    }
     const mine = item.message.role === 'user';
     const tag = tagOf(item.message, aspirations);
     return (
@@ -160,7 +187,9 @@ export default function CoachScreen() {
     const text = draft.trim();
     if (!text) return;
     setDraft('');
-    void send(text, filter ?? undefined);
+    setScope(null);
+    // A message opened from an Aspiration's button is about that Aspiration; otherwise the filter's.
+    void send(text, scope?.aspirationId ?? filter ?? undefined, scope?.intent);
   };
 
   return (

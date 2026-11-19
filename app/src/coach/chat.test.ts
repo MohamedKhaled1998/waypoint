@@ -7,12 +7,14 @@ function fakeApi() {
   const api = {
     server: [] as StoredMessage[],
     sent: [] as string[],
+    contexts: [] as unknown[],
     script: (async () => {}) as Script,
     async history() {
       return api.server;
     },
-    async send(_text: string, clientId: string, onEvent: (e: SseEvent) => void) {
+    async send(_text: string, clientId: string, onEvent: (e: SseEvent) => void, aspirationId?: string, intent?: string) {
       api.sent.push(clientId);
+      api.contexts.push({ aspirationId, intent });
       await api.script(onEvent);
     },
   };
@@ -36,6 +38,23 @@ describe('Coach chat', () => {
 
     expect(seen).toEqual(['asp-1']);
     expect(c.state.messages[0]?.aspirationId).toBe('asp-1');
+  });
+
+  it('sends the Aspiration and the intent with the message, and again when it is resent', async () => {
+    const api = fakeApi();
+    let fail = true;
+    api.script = async (emit) => {
+      if (fail) throw new Error('offline');
+      emit({ name: 'done', data: { messageId: 'm1' } });
+    };
+    const c = chat(api);
+    await c.send('I would like to change the dates.', 'a1', 'change_dates');
+    fail = false;
+    await c.retrySaved();
+    expect(api.contexts).toEqual([
+      { aspirationId: 'a1', intent: 'change_dates' },
+      { aspirationId: 'a1', intent: 'change_dates' },
+    ]);
   });
 
   it('shows typing, then streams the reply into one Coach message', async () => {

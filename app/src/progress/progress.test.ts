@@ -1,5 +1,5 @@
 import { en } from '../i18n/en';
-import { hoursLabel, projectionLine, stepFractions, type Projection } from './progress';
+import { coachRoute, hoursLabel, isCoachIntent, projectionLine, settleOffer, stepFractions, type Projection, type SettleOption } from './progress';
 
 /** A minimal t over the English strings, with {{name}} interpolation. */
 function t(key: string, values: Record<string, string | number> = {}): string {
@@ -43,5 +43,45 @@ describe('Progress numbers', () => {
   it('fills the step bar with reached Milestones', () => {
     expect(stepFractions(1, 4)).toEqual([true, false, false, false]);
     expect(stepFractions(0, 0)).toEqual([]);
+  });
+});
+
+describe('opening the Coach with an Aspiration in context', () => {
+  it('scopes the Coach tab to the Aspiration and the choice', () => {
+    expect(coachRoute('a1', 'Half marathon', 'keep_date_smaller_picture')).toEqual({
+      pathname: '/coach',
+      params: { aspirationId: 'a1', shortName: 'Half marathon', intent: 'keep_date_smaller_picture' },
+    });
+  });
+
+  it('has a starter line in the glossary words for every intent', () => {
+    for (const intent of ['change_dates', 'change_plan', 'move_date', 'keep_date_smaller_picture', 'make_more_room']) {
+      expect(t(`coach.starters.${intent}`, { name: 'Half marathon' })).toContain('Half marathon');
+    }
+  });
+});
+
+describe('the Settle-for choice', () => {
+  const base = { aspirationId: 'a1', shortName: 'Half marathon' };
+  const choice = { options: ['move_date', 'keep_date_smaller_picture', 'make_more_room'] as SettleOption[], hasPicture: true };
+
+  it('shows nothing when the server did not put the choice', () => {
+    expect(settleOffer({ ...base, settleChoice: null })).toBeNull();
+  });
+
+  it('shows the muted line and one Coach route per option, each with the Aspiration and the choice', () => {
+    const offer = settleOffer({ ...base, settleChoice: choice })!;
+    expect(offer.mutedLine).toBe(true);
+    expect(offer.options.map((o) => o.route.params)).toEqual([
+      { aspirationId: 'a1', shortName: 'Half marathon', intent: 'move_date' },
+      { aspirationId: 'a1', shortName: 'Half marathon', intent: 'keep_date_smaller_picture' },
+      { aspirationId: 'a1', shortName: 'Half marathon', intent: 'make_more_room' },
+    ]);
+    expect(offer.options.every((o) => o.route.pathname === '/coach')).toBe(true);
+  });
+
+  it('knows which intents the Coach tab can open for', () => {
+    expect(isCoachIntent('change_dates')).toBe(true);
+    expect(isCoachIntent('nonsense')).toBe(false);
   });
 });

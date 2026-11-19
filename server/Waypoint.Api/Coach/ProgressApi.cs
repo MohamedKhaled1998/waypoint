@@ -67,9 +67,11 @@ public static class ProgressApi
         return new
         {
             AspirationId = a.Id, a.ShortName, a.Hue, a.OwnWords, a.HopedForDate, a.SettleForDate, a.SettleForPicture,
-            HasPlan = p.Current is not null,
+            HasPlan = p.Current is not null, PlanVersionId = p.Current?.Id, PlanNumber = p.Current?.Number, ShareHoursPerWeek = a.ShareHoursPerWeek,
             Pace = p.Pace, PaceWords = ProgressMath.PaceWords(p.Pace),
             State = state,
+            // Past Settle-for: the honest choice, for the calm card on the Aspiration screen and the muted line on Progress.
+            SettleChoice = state == ProgressStates.PastSettleFor ? new { Options = DateProposals.SettleOptions, HasPicture = !string.IsNullOrWhiteSpace(a.SettleForPicture) } : null,
             MilestonesReached = p.Milestones.Count(m => m.State == "reached"),
             MilestonesTotal = p.Milestones.Count,
             Next = firstOpen is null ? null : milestones.First(m => m.Id == firstOpen.Id),

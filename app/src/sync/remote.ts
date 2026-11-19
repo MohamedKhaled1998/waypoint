@@ -50,7 +50,7 @@ export function httpRemote(auth: Auth): Remote {
         case 'approve_plan':
           return outcome(await call(`/plan-versions/${p(item).versionId}/approve`, 'POST'));
         case 'message': {
-          const res = await call('/coach/messages', 'POST', { text: p(item).text, clientId: item.clientId, aspirationId: p(item).aspirationId });
+          const res = await call('/coach/messages', 'POST', { text: p(item).text, clientId: item.clientId, aspirationId: p(item).aspirationId, intent: p(item).intent });
           // The reply streams back; the pull brings it in, so the stream is read to its end and dropped.
           if (res.ok) await res.text();
           return outcome(res);

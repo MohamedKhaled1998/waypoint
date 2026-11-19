@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet } from 'react-native-unistyles';
 import { buildHabits, type DotState, type HabitRow } from '../../aspiration/habits';
@@ -8,7 +8,8 @@ import { progressRows } from '../../pause/pause';
 import { usePauses } from '../../pause/usePauses';
 import { usePlanSummaries } from '../../plan/usePlan';
 import { MeasureTab } from '../../measure/MeasureTab';
-import { RouteStep, StatePill } from '../../progress/ProgressParts';
+import { coachRoute, settleOffer } from '../../progress/progress';
+import { RouteStep, SettleCard, StatePill } from '../../progress/ProgressParts';
 import { useAspirationProgress } from '../../progress/useProgress';
 import { actionById, localNow, useToday } from '../../today/useToday';
 import { Button } from '../../ui/Button';
@@ -27,6 +28,7 @@ const FEW_DAYS = [2, 3, 5, 7] as const;
 export default function AspirationScreen() {
   const { t, i18n } = useTranslation();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const router = useRouter();
   const { value: a, failed } = useAspirationProgress(id);
   const [tab, setTab] = useState<(typeof tabs)[number]>('route');
   const { plans } = usePlanSummaries();
@@ -86,6 +88,7 @@ export default function AspirationScreen() {
         <Text>{t(`progress.standing.${a.state}`)}</Text>
         <StatePill state={a.state} />
       </Card>
+      {settleOffer(a) ? <SettleCard choice={a.settleChoice!} onPick={(option) => router.push(coachRoute(a.aspirationId, a.shortName, option))} /> : null}
       <View style={styles.tabs}>
         {tabs.map((name) => (
           <Pressable key={name} accessibilityRole="tab" accessibilityState={{ selected: tab === name }} onPress={() => setTab(name)} style={[styles.tab, tab === name ? styles.tabOn : null]}>
@@ -108,6 +111,14 @@ export default function AspirationScreen() {
             <HabitCard key={h.title} habit={h} onReminder={() => void setHabitReminder(actionById(actions, h.sample.id)!, !h.reminderOn, { today })} />
           ))}
         </View>
+      ) : tab === 'plan' ? (
+        <Card style={styles.stand}>
+          <Text>{a.planVersionId ? t('progress.plan.version', { number: a.planNumber ?? 1 }) : t('progress.plan.noVersion')}</Text>
+          {a.planVersionId ? <Button kind="secondary" title={t('plan.review')} onPress={() => router.push({ pathname: '/plan-review', params: { id: a.planVersionId! } })} /> : null}
+          <Text muted>{t('progress.plan.share', { hours: a.shareHoursPerWeek })}</Text>
+          <Button kind="secondary" title={t('progress.plan.changeDates')} onPress={() => router.push(coachRoute(a.aspirationId, a.shortName, 'change_dates'))} />
+          <Button kind="secondary" title={t('progress.plan.changePlan')} onPress={() => router.push(coachRoute(a.aspirationId, a.shortName, 'change_plan'))} />
+        </Card>
       ) : (
         <Text muted>{t('progress.laterTab')}</Text>
       )}

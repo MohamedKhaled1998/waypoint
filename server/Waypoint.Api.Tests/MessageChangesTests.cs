@@ -37,12 +37,13 @@ public sealed class MessageChangesTests(WaypointApiFactory factory) : PlanTestBa
         return (c, userId, aspirationId, shift);
     }
 
-    private async Task SayAsync(HttpClient c, string text, string intent, string clientId)
+    /// <summary>Sends a message. <paramref name="reading"/> is what the light model replies; <paramref name="tapped"/> is the button the chat was opened from.</summary>
+    private async Task SayAsync(HttpClient c, string text, string reading, string clientId, Guid? aspirationId = null, string? tapped = null)
     {
-        factory.Coach.PauseIntent = intent;
+        factory.Coach.PauseIntent = reading;
         try
         {
-            var res = await c.PostAsJsonAsync("/coach/messages", new { text, clientId });
+            var res = await c.PostAsJsonAsync("/coach/messages", new { text, clientId, aspirationId, intent = tapped });
             res.EnsureSuccessStatusCode();
             await res.Content.ReadAsStringAsync();
         }
@@ -253,5 +254,55 @@ public sealed class MessageChangesTests(WaypointApiFactory factory) : PlanTestBa
         Assert.NotEmpty(jobs);
         Assert.All(jobs, j => Assert.DoesNotContain("mornings", j.PayloadJson));
         Assert.All(JsonNode.Parse(jobs[0].PayloadJson)!.AsObject(), p => Assert.True(Guid.TryParse(p.Value!.GetValue<string>(), out _)));
+    }
+
+    [Fact]
+    public async Task Change_the_Plan_on_an_Aspiration_queues_a_Re_plan_for_it_without_reading_the_message()
+    {
+        var (c, userId, aspirationId, _) = await ApprovedPlanAsync();
+        await RunJobsAsync();
+        var asked = factory.Coach.Requests.Count;
+
+        await SayAsync(c, "Fewer evening sessions, please", "{\"pause\": null}", "change-plan-1", aspirationId, CoachChat.ChangePlanIntent);
+
+        Assert.DoesNotContain(factory.Coach.Requests.Skip(asked), r => r.Kind == CoachCallKind.PauseIntent);
+        using var scope = factory.Services.CreateScope();
+        var jobs = await scope.ServiceProvider.GetRequiredService<WaypointDb>().Jobs.IgnoreQueryFilters()
+            .Where(j => j.UserId == userId && j.Kind == JobKinds.RePlan).ToListAsync();
+        Assert.Equal((Guid?)aspirationId, Assert.Single(jobs).AspirationId);
+        Assert.Contains("redrawing", factory.Coach.Requests.Last(r => r.Kind == CoachCallKind.Chat).System);
+    }
+
+    [Fact]
+    public async Task Change_dates_with_nothing_slipping_proposes_the_dates_the_user_asked_for_within_Settle_for()
+    {
+        var (c, _, aspirationId, _) = await ApprovedPlanAsync();
+        await RunJobsAsync();
+
+        await SayAsync(c, "Push my dates back two weeks", "{\"weeks\": 2}", "dates-1", aspirationId, DateProposals.ChangeDatesIntent);
+
+        var card = Card(await ThreadAsync(c), "proposal").GetProperty("cardData");
+        var proposed = card.GetProperty("planVersionId").GetGuid();
+        Assert.Equal(proposed, (await PlansAsync(c, aspirationId)).GetProperty("pendingVersionId").GetGuid());
+        Assert.Equal(DateProposals.Later, card.GetProperty("kind").GetString());
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<WaypointDb>();
+        var dates = await db.Milestones.IgnoreQueryFilters().Where(m => m.PlanVersionId == proposed).Select(m => m.Date).ToListAsync();
+        Assert.NotEmpty(dates);
+        Assert.All(dates, d => Assert.True(d <= new DateOnly(2027, 1, 1)));
+    }
+
+    [Fact]
+    public async Task Change_dates_without_saying_how_far_proposes_nothing_and_the_Coach_asks()
+    {
+        var (c, _, aspirationId, _) = await ApprovedPlanAsync();
+        await RunJobsAsync();
+        var before = (await ThreadAsync(c)).Length;
+
+        await SayAsync(c, "I want to change my dates", "{\"weeks\": null}", "dates-2", aspirationId, DateProposals.ChangeDatesIntent);
+
+        Assert.DoesNotContain((await ThreadAsync(c)).Skip(before), m => m.GetProperty("card").GetString() == "proposal");
+        Assert.Equal(JsonValueKind.Null, (await PlansAsync(c, aspirationId)).GetProperty("pendingVersionId").ValueKind);
+        Assert.Contains("how much later or earlier", factory.Coach.Requests.Last(r => r.Kind == CoachCallKind.Chat).Turns[^1].Text);
     }
 }

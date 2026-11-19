@@ -86,7 +86,7 @@ public static class Plans
 
         var now = clock.GetUtcNow().UtcDateTime;
         var today = DateOnly.FromDateTime(now);
-        if (today > version.StartDate)
+        if (today > version.StartDate && !DateProposals.IsDates(version.Reason))
         {
             // The two weeks it planned have started, so its dates no longer fit: replace it with a fresh draft.
             var replaced = await db.PlanVersions.Where(p => p.Id == id && p.Status == PlanVersionStatus.Proposed)
@@ -107,6 +107,15 @@ public static class Plans
             await tx.RollbackAsync(ct);
             version = await RefreshAsync(db, version, ct);
             return version.Status == PlanVersionStatus.Approved ? Results.Ok(await ViewAsync(db, version, ct)) : await StaleAsync(db, version, ct);
+        }
+        // A dates proposal is made on the Plan of its day; copy the Plan as it is now, in case a refresh was approved since.
+        // Only the winner gets here, and the tx undoes the win if the dates it was made from have moved.
+        if (DateProposals.IsDates(version.Reason) && !await DateProposals.RebaseAsync(db, version, today, ct))
+        {
+            await tx.RollbackAsync(ct);
+            await db.PlanVersions.Where(p => p.Id == id && p.Status == PlanVersionStatus.Proposed)
+                .ExecuteUpdateAsync(s => s.SetProperty(p => p.Status, PlanVersionStatus.Replaced), ct);
+            return await StaleAsync(db, await RefreshAsync(db, version, ct), ct);
         }
         var supersededIds = await db.PlanVersions.Where(p => p.AspirationId == version.AspirationId && p.Id != id && p.Status == PlanVersionStatus.Approved)
             .Select(p => p.Id).ToListAsync(ct);
@@ -199,8 +208,11 @@ public static class Plans
             user.RequestedTimeBudgetHours = null;
     }
 
-    /// <summary>Every version after the first Plan lays out its window anew, from its start on, keeping only Actions already checked in.</summary>
-    private static bool RollsWindow(string reason) => reason != "first_plan";
+    /// <summary>
+    /// Every version after the first Plan lays out its window anew, from its start on, keeping only Actions already checked in.
+    /// Date proposals carry no window of their own, so they leave the scheduled Actions alone.
+    /// </summary>
+    private static bool RollsWindow(string reason) => reason is not ("first_plan" or DateProposals.Later or DateProposals.Earlier);
 
     private static int LeadFrom(JsonObject a)
     {

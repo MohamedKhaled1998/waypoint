@@ -3,7 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { StyleSheet } from 'react-native-unistyles';
 import type { Hue } from '../theme/tokens';
 import { Text } from '../ui/Text';
-import { hoursLabel, projectionLine, type MilestoneRow, type Projection, type ProgressState, type WeekCard } from './progress';
+import { Pressable } from 'react-native';
+import { hoursLabel, projectionLine, type MilestoneRow, type Projection, type ProgressState, type SettleChoice, type SettleOption, type WeekCard } from './progress';
+import { useState } from 'react';
+import { Card } from '../ui/Card';
 
 /** A state pill: Too early, On track, Slipping, Ahead or Your call. */
 export function StatePill({ state }: { state: ProgressState }) {
@@ -68,6 +71,29 @@ export function WeekCardView({ title, week }: { title: string; week: WeekCard })
   );
 }
 
+/** The calm Settle-for card: unfolds the three options, each opening the Coach with that choice in context. */
+export function SettleCard({ choice, onPick }: { choice: SettleChoice; onPick: (option: SettleOption) => void }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  return (
+    <Card style={styles.settle}>
+      <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={() => setOpen(!open)} style={styles.settleHead}>
+        <Text variant="label">{t('progress.settleChoice.title')}</Text>
+        <Text muted variant="caption">
+          {t('progress.settleChoice.body')}
+        </Text>
+      </Pressable>
+      {open
+        ? choice.options.map((option) => (
+            <Pressable key={option} accessibilityRole="button" onPress={() => onPick(option)} style={styles.settleOption}>
+              <Text variant="label">{t(`progress.settleChoice.options.${option}`)}</Text>
+            </Pressable>
+          ))
+        : null}
+    </Card>
+  );
+}
+
 /** One Milestone on the Route: tick, "You are here", Projection, state pill, planned date and "reached when" line. */
 export function RouteStep({ milestone, hue, date }: { milestone: MilestoneRow; hue: Hue; date: string }) {
   const { t } = useTranslation();
@@ -111,6 +137,9 @@ const styles = StyleSheet.create((theme) => ({
   shortName: { width: 96 },
   track: { flex: 1, height: 8, borderRadius: theme.radii.pill, backgroundColor: theme.colors.border, overflow: 'hidden' },
   fill: { height: 8, borderRadius: theme.radii.pill },
+  settle: { gap: theme.space.sm },
+  settleHead: { gap: theme.space.xs },
+  settleOption: { padding: theme.space.md, borderRadius: theme.radii.md, borderWidth: 1, borderColor: theme.colors.border },
   routeStep: { flexDirection: 'row', gap: theme.space.md },
   dot: {
     width: 20,

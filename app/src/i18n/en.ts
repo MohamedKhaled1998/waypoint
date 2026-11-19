@@ -250,6 +250,24 @@ export const en = {
       1: 'January', 2: 'February', 3: 'March', 4: 'April', 5: 'May', 6: 'June',
       7: 'July', 8: 'August', 9: 'September', 10: 'October', 11: 'November', 12: 'December',
     },
+    settleChoice: {
+      // The calm card: one line, then three options that each open the Coach.
+      title: 'The last Milestone looks out of reach for now',
+      body: 'At this Pace it lands past your Settle-for date. Nothing changes until you say so.',
+      mutedLine: 'Out of reach for now. Your call.',
+      options: {
+        move_date: 'Move the date',
+        keep_date_smaller_picture: 'Keep the date with the smaller picture',
+        make_more_room: 'Make more room',
+      },
+    },
+    plan: {
+      version: 'Plan version {{number}}',
+      noVersion: 'No Plan yet',
+      share: '{{hours}} h a week of your Time budget',
+      changeDates: 'Change dates',
+      changePlan: 'Change the Plan',
+    },
     tabs: { route: 'Route', measure: 'Measure', habits: 'Habits', plan: 'Plan' },
     laterTab: 'This tab comes in a later update.',
     youAreHere: 'You are here',
@@ -307,6 +325,13 @@ export const en = {
     filterLabel: 'Show messages about {{name}}',
     waitingTitle: '{{name}}: a Plan waits for your Review',
     waitingReview: 'Review',
+    starters: {
+      change_dates: 'I would like to change the dates for {{name}}.',
+      change_plan: 'I would like to change the Plan for {{name}}.',
+      move_date: 'Let us move the date for {{name}} to a later one.',
+      keep_date_smaller_picture: 'I would keep the date for {{name}} with a smaller picture.',
+      make_more_room: 'Can {{name}} have a bigger share of my Time budget?',
+    },
   },
   interview: {
     title: 'Interview',

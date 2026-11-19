@@ -9,7 +9,7 @@ using Waypoint.Api.Data;
 
 namespace Waypoint.Api.Coach;
 
-public sealed record SendMessageRequest(string? Text, string? ClientId, Guid? AspirationId);
+public sealed record SendMessageRequest(string? Text, string? ClientId, Guid? AspirationId, string? Intent = null);
 
 public static class CoachChat
 {
@@ -72,7 +72,7 @@ public static class CoachChat
     };
 
     private static async Task Send(SendMessageRequest req, HttpContext http, WaypointDb db, CurrentUser me,
-        ICoachModelClient model, IOptions<CoachOptions> options, TimeProvider clock, JobQueue jobs, ILoggerFactory logs)
+        ICoachModelClient model, IOptions<CoachOptions> options, TimeProvider clock, ProgressCalculator progress, JobQueue jobs, ILoggerFactory logs)
     {
         var log = logs.CreateLogger("Waypoint.Coach.Chat");
         var ct = http.RequestAborted;
@@ -130,10 +130,29 @@ public static class CoachChat
             var window = await db.ChatMessages.Where(m => m.Seq <= user.Seq)
                 .OrderByDescending(m => m.Seq).Take(WindowSize).OrderBy(m => m.Seq).ToListAsync(ct);
             var system = SystemPrompt;
-            var outcome = await IntentFromChatAsync(user, db, jobs, model, options.Value, clock, ct);
+            var now = clock.GetUtcNow().UtcDateTime;
+            var aspiration = user.AspirationId is { } aid ? await db.Aspirations.FirstOrDefaultAsync(a => a.Id == aid, ct) : null;
+            // Opened from an Aspiration with "Change dates" or "Move the date": the server decides the dates, the Coach words them.
+            var offer = aspiration is null ? null : await DateProposals.ForChatAsync(db, progress, aspiration, req.Intent, now,
+                open => RequestedWeeksAsync(user.Text, open, now, model, options.Value, ct), ct);
+            // Anything else is read for a Pause, a budget cut or a Re-plan.
+            var outcome = offer is null ? await IntentFromChatAsync(user, aspiration, req.Intent, db, jobs, model, options.Value, clock, ct)
+                : offer.VersionId is null ? Nothing
+                : new Outcome(null, "proposal", new JsonObject
+                {
+                    ["planVersionId"] = offer.VersionId, ["aspirationId"] = aspiration!.Id, ["shortName"] = aspiration.ShortName, ["hue"] = aspiration.Hue,
+                    ["kind"] = offer.Kind,
+                });
             if (outcome.Note is not null) system += " " + outcome.Note;
             var turns = window.SkipWhile(m => m.Role != "user")
                 .Select(m => new CoachTurn(m.Role == "user" ? "user" : "assistant", m.Text)).ToList();
+            if (offer is not null && turns.Count > 0)
+                turns[^1] = turns[^1] with
+                {
+                    Text = turns[^1].Text + (offer.VersionId is null
+                        ? "\n\n[Waypoint: " + offer.Brief + "]"
+                        : "\n\n[Waypoint: the server proposed these dates, for the user to review: " + offer.Brief + "]"),
+                };
             if (await GuideEdits.ContextAsync(db, ct) is { } guides && turns.Count > 0)
                 turns[^1] = turns[^1] with { Text = turns[^1].Text + "\n\n[Current Guides: " + guides + "]" };
             var filter = new MarkerFilter(GuideEdits.Marker);
@@ -199,6 +218,42 @@ public static class CoachChat
         {"replan": {"aspirationId": <id from the list, or null for all>}}  when they ask for any other change to the Plan ("make mornings shorter").
         """;
 
+    /// <summary>The "Change the Plan" button on an Aspiration.</summary>
+    public const string ChangePlanIntent = "change_plan";
+
+    private const string DatesSystem = """
+        You read one message from a user of a coaching app who wants to move their Milestone dates. The first turn is JSON: "today",
+        "milestones" (title and date, earliest first) and "message". Reply with only JSON: {"weeks": <whole number>} for how far they want
+        the dates to move, positive for later and negative for earlier (a named date counts from the first Milestone's date, rounded to
+        whole weeks), or {"weeks": null} when the message doesn't say how far.
+        """;
+
+    /// <summary>How many whole weeks the user asked to move their dates, read by the light model and checked by the server. Null when they didn't say.</summary>
+    private static async Task<int?> RequestedWeeksAsync(string text, IReadOnlyList<Milestone> open, DateTime now, ICoachModelClient model,
+        CoachOptions options, CancellationToken ct)
+    {
+        var choice = options.For(CoachCallKind.PauseIntent);
+        var input = new JsonObject
+        {
+            ["today"] = DateOnly.FromDateTime(now).ToString("yyyy-MM-dd"),
+            ["milestones"] = new JsonArray(open.Select(m => (JsonNode)new JsonObject { ["title"] = m.Title, ["date"] = m.Date.ToString("yyyy-MM-dd") }).ToArray()),
+            ["message"] = text,
+        };
+        var raw = new StringBuilder();
+        await foreach (var chunk in model.StreamAsync(new CoachRequest(CoachCallKind.PauseIntent, choice.Provider, choice.Model,
+            DatesSystem, [new CoachTurn("user", input.ToJsonString())]), ct))
+            raw.Append(chunk);
+        var reply = raw.ToString();
+        var start = reply.IndexOf('{');
+        var end = reply.LastIndexOf('}');
+        if (start < 0 || end < start) return null;
+        try
+        {
+            return JsonNode.Parse(reply[start..(end + 1)])?["weeks"] is JsonValue v && v.TryGetValue<int>(out var weeks) ? weeks : null;
+        }
+        catch (JsonException) { return null; }
+    }
+
     /// <summary>What the chat found in a message: a line for the Coach's reply, and a card to put on it.</summary>
     private sealed record Outcome(string? Note, string? Card = null, JsonObject? CardData = null);
 
@@ -208,8 +263,8 @@ public static class CoachChat
     /// The model only reads the message; the server decides. A plain request for a Pause starts it (no approval); a described situation suggests
     /// one on a card; a budget cut and a Re-plan become jobs that propose, and nothing changes until the user approves. Safe to run again on a resend.
     /// </summary>
-    private static async Task<Outcome> IntentFromChatAsync(ChatMessage user, WaypointDb db, JobQueue jobs, ICoachModelClient model,
-        CoachOptions options, TimeProvider clock, CancellationToken ct)
+    private static async Task<Outcome> IntentFromChatAsync(ChatMessage user, Aspiration? scoped, string? tapped, WaypointDb db, JobQueue jobs,
+        ICoachModelClient model, CoachOptions options, TimeProvider clock, CancellationToken ct)
     {
         var clientId = "chat-" + user.Id.ToString("N");
         var now = clock.GetUtcNow().UtcDateTime;
@@ -218,19 +273,27 @@ public static class CoachChat
         if (made is not null) return new(Started(made, aspirations));
         if (user.IntentJson is not null) return Describe(JsonNode.Parse(user.IntentJson)!.AsObject(), clientId, aspirations, now);
 
-        var choice = options.For(CoachCallKind.PauseIntent);
-        var input = new JsonObject
+        JsonObject intent;
+        // "Change the Plan" on an Aspiration is that ask already: no model call.
+        if (tapped == ChangePlanIntent && scoped is not null)
+            intent = aspirations.Any(a => a.Id == scoped.Id)
+                ? new JsonObject { ["kind"] = "replan", ["aspirationIds"] = new JsonArray((JsonNode)scoped.Id.ToString()) }
+                : new JsonObject { ["kind"] = "none" };
+        else
         {
-            ["today"] = DateOnly.FromDateTime(now).ToString("yyyy-MM-dd"),
-            ["aspirations"] = new JsonArray(aspirations.Select(a => (JsonNode)new JsonObject { ["id"] = a.Id, ["shortName"] = a.ShortName }).ToArray()),
-            ["message"] = user.Text,
-        };
-        var raw = new StringBuilder();
-        await foreach (var chunk in model.StreamAsync(new CoachRequest(CoachCallKind.PauseIntent, choice.Provider, choice.Model,
-            IntentSystem, [new CoachTurn("user", input.ToJsonString())]), ct))
-            raw.Append(chunk);
-
-        var intent = ReadIntent(raw.ToString(), aspirations, now);
+            var choice = options.For(CoachCallKind.PauseIntent);
+            var input = new JsonObject
+            {
+                ["today"] = DateOnly.FromDateTime(now).ToString("yyyy-MM-dd"),
+                ["aspirations"] = new JsonArray(aspirations.Select(a => (JsonNode)new JsonObject { ["id"] = a.Id, ["shortName"] = a.ShortName }).ToArray()),
+                ["message"] = user.Text,
+            };
+            var raw = new StringBuilder();
+            await foreach (var chunk in model.StreamAsync(new CoachRequest(CoachCallKind.PauseIntent, choice.Provider, choice.Model,
+                IntentSystem, [new CoachTurn("user", input.ToJsonString())]), ct))
+                raw.Append(chunk);
+            intent = ReadIntent(raw.ToString(), aspirations, now);
+        }
         user.IntentJson = intent.ToJsonString();
         var kind = HandOff.Str(intent, "kind");
         if (kind == "pause_started")

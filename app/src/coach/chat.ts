@@ -14,6 +14,9 @@ export type StoredMessage = {
   replied: boolean;
 };
 
+/** What the Coach chat was opened for: the Aspiration in context, and what the user chose to talk about. */
+export type CoachContext = { aspirationId: string; intent?: string };
+
 /** `sending`: in flight. `saved`: kept on the phone, the Coach will reply when it can. `sent`: the server has it. */
 export type ChatMessage = {
   id: string;
@@ -23,6 +26,8 @@ export type ChatMessage = {
   createdAt: string;
   status: 'sending' | 'saved' | 'sent';
   aspirationId?: string;
+  /** The button the chat was opened from ("change_dates", "change_plan"…), sent with the message so the server acts on it. */
+  intent?: string;
   card?: string;
   cardData?: Record<string, any>;
 };
@@ -32,7 +37,7 @@ export type ChatState = { messages: ChatMessage[]; typing: boolean; late: boolea
 export interface CoachApi {
   history(): Promise<StoredMessage[]>;
   /** Resolves when the stream ends; rejects when the server cannot be reached. */
-  send(text: string, clientId: string, onEvent: (e: SseEvent) => void, aspirationId?: string): Promise<void>;
+  send(text: string, clientId: string, onEvent: (e: SseEvent) => void, aspirationId?: string, intent?: string): Promise<void>;
 }
 
 type Deps = { newId: () => string; now: () => string; retryDelaysMs?: number[] };
@@ -87,12 +92,12 @@ export function createCoachChat(api: CoachApi, deps: Deps) {
     },
 
     /** Adds the message at once, then delivers it. Deliveries run one at a time, in order. */
-    send(text: string, aspirationId?: string): Promise<void> {
+    send(text: string, aspirationId?: string, intent?: string): Promise<void> {
       const clientId = deps.newId();
       set({
         messages: [
           ...chat.state.messages,
-          { id: clientId, clientId, role: 'user', text, createdAt: deps.now(), status: 'sending', aspirationId },
+          { id: clientId, clientId, role: 'user', text, createdAt: deps.now(), status: 'sending', aspirationId, intent },
         ],
       });
       return enqueue(() => deliver(clientId));
@@ -161,7 +166,7 @@ export function createCoachChat(api: CoachApi, deps: Deps) {
       }
     };
     try {
-      await api.send(mine.text, clientId, onEvent, mine.aspirationId);
+      await api.send(mine.text, clientId, onEvent, mine.aspirationId, mine.intent);
     } catch {
       failed = true;
     }

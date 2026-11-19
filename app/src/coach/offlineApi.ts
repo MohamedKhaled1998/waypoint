@@ -19,10 +19,10 @@ export function offlineCoachApi(deps: { storage: Storage; sync: Sync; now: () =>
         }));
       return [...cached, ...waiting];
     },
-    async send(text, clientId, _onEvent, aspirationId) {
+    async send(text, clientId, _onEvent, aspirationId, intent) {
       // Resending a Saved message must not queue it twice: the same client ID is already waiting.
       if ((await deps.sync.outbox()).some((i) => i.clientId === clientId)) void deps.sync.sync();
-      else await deps.sync.enqueue('message', aspirationId ? { text, aspirationId } : { text }, clientId);
+      else await deps.sync.enqueue('message', { text, ...(aspirationId ? { aspirationId } : {}), ...(intent ? { intent } : {}) }, clientId);
     },
   };
 }

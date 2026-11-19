@@ -3,7 +3,7 @@ import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet } from 'react-native-unistyles';
 import { useUnfinishedInterview } from '../../interview/useInterview';
-import { stepFractions } from '../../progress/progress';
+import { settleOffer, stepFractions } from '../../progress/progress';
 import { ProjectionText, StatePill, StepBar, WeekCardView } from '../../progress/ProgressParts';
 import { useProgress } from '../../progress/useProgress';
 import { usePlanSummaries } from '../../plan/usePlan';
@@ -88,6 +88,11 @@ export default function ProgressScreen() {
                     <Text variant="label">{t('progress.next', { title: a.next.title })}</Text>
                     <ProjectionText projection={a.next.projection} />
                     <StatePill state={a.state} />
+                    {settleOffer(a)?.mutedLine ? (
+                      <Text muted variant="caption">
+                        {t('progress.settleChoice.mutedLine')}
+                      </Text>
+                    ) : null}
                   </>
                 ) : (
                   <Text muted>{t('progress.noMilestone')}</Text>
