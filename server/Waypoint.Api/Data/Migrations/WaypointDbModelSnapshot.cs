@@ -147,6 +147,9 @@ namespace Waypoint.Api.Data.Migrations
                         .IsRequired()
                         .HasColumnType("longtext");
 
+                    b.Property<bool>("Unprompted")
+                        .HasColumnType("tinyint(1)");
+
                     b.Property<Guid>("UserId")
                         .HasColumnType("char(36)");
 
@@ -751,6 +754,20 @@ namespace Waypoint.Api.Data.Migrations
                     b.Property<int>("RefreshDay")
                         .HasColumnType("int");
 
+                    b.Property<string>("QuietEnd")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(5)
+                        .HasColumnType("varchar(5)")
+                        .HasDefaultValue("07:00");
+
+                    b.Property<string>("QuietStart")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(5)
+                        .HasColumnType("varchar(5)")
+                        .HasDefaultValue("21:30");
+
                     b.Property<string>("RefreshTime")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -763,6 +780,7 @@ namespace Waypoint.Api.Data.Migrations
 
                     b.Property<int>("SilenceStage")
                         .HasColumnType("int");
+
 
                     b.Property<double?>("TimeBudgetHours")
                         .HasColumnType("double");

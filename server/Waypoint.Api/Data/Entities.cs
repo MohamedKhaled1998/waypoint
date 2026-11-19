@@ -20,6 +20,10 @@ public sealed class User
     public DateTime? LastActiveAt { get; set; }
     /// <summary>How far the silence ladder has gone since LastActiveAt: 0 none, 1 gentle nudge, 2 nudge offering a Pause, 3 auto-Pause.</summary>
     public int SilenceStage { get; set; }
+    /// <summary>HH:mm, UTC: unprompted Coach messages wait from here...</summary>
+    public string QuietStart { get; set; } = "21:30";
+    /// <summary>... until here. Default 21:30-07:00; reminders for the user's own Slots ignore it.</summary>
+    public string QuietEnd { get; set; } = "07:00";
 }
 
 public static class RefreshStatus
@@ -76,6 +80,8 @@ public sealed class ChatMessage
     /// <summary>On a Coach reply: the user message it answers.</summary>
     public Guid? InReplyToId { get; set; }
     public DateTime CreatedAt { get; set; }
+    /// <summary>A Coach message sent without the user asking, which counts toward Contact frequency.</summary>
+    public bool Unprompted { get; set; }
     /// <summary>Set on a card message, e.g. "interview_summary".</summary>
     public string? Card { get; set; }
     /// <summary>The card's data as JSON.</summary>

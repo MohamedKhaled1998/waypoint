@@ -12,7 +12,7 @@ namespace Waypoint.Api.Coach;
 /// The one "welcome back" after a Pause: asks Catch-up or shift the dates. What is suggested is decided here by how long
 /// the Pause ran; the Coach only phrases it. If the model is down it is late, never faked: the job retries.
 /// </summary>
-public sealed class WelcomeBackWriter(WaypointDb db, CoachMessenger messenger, ICoachModelClient model, IOptions<CoachOptions> options, TimeProvider clock)
+public sealed class WelcomeBackWriter(WaypointDb db, CoachMessenger messenger, ContactGate gate, JobQueue jobs, ICoachModelClient model, IOptions<CoachOptions> options, TimeProvider clock)
 {
     private const string System = """
         You are the Coach in Waypoint, a personal coaching app. The user is back from a Pause. In two or three warm,
@@ -40,6 +40,21 @@ public sealed class WelcomeBackWriter(WaypointDb db, CoachMessenger messenger, I
             return;
         }
 
+        // Asked before the model is: a held message costs nothing, and a held one comes back as the same job later.
+        var decision = await gate.DecideAsync(new UnpromptedRequest(UnpromptedKind.WelcomeBack, pause.AspirationId), ct);
+        if (decision is GateDecision.Hold hold)
+        {
+            jobs.Add(JobKinds.WelcomeBack, pause.UserId, new Dictionary<string, Guid> { ["pauseId"] = pause.Id }, pause.AspirationId, delay: hold.Until - now);
+            await db.SaveChangesAsync(ct);
+            return;
+        }
+        if (decision is not GateDecision.Send permit)
+        {
+            pause.WelcomedAt = now;
+            await db.SaveChangesAsync(ct);
+            return;
+        }
+
         var suggested = days <= Pauses.CatchUpMaxDays ? Pauses.CatchUp : Pauses.ShiftDates;
         var choice = options.Value.For(CoachCallKind.Chat);
         var reply = new StringBuilder();
@@ -50,6 +65,6 @@ public sealed class WelcomeBackWriter(WaypointDb db, CoachMessenger messenger, I
 
         pause.WelcomedAt = now;
         var card = JsonSerializer.Serialize(new { pauseId = pause.Id, suggested, pauseDays = days, setAside }, JsonSerializerOptions.Web);
-        await messenger.PostUnpromptedAsync(pause.AspirationId, reply.ToString(), ct, Pauses.WelcomeBackCard, card);
+        await messenger.PostUnpromptedAsync(permit, pause.AspirationId, reply.ToString(), ct, Pauses.WelcomeBackCard, card);
     }
 }

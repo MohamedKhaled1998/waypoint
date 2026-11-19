@@ -30,6 +30,7 @@ builder.Services.AddOptions<FirebaseOptions>().Bind(builder.Configuration.GetSec
 builder.Services.AddSingleton<IPushSender, FirebasePushSender>();
 builder.Services.AddScoped<PushNotifier>();
 builder.Services.AddScoped<CoachMessenger>();
+builder.Services.AddScoped<ContactGate>();
 
 builder.Services.AddScoped<JobQueue>();
 builder.Services.AddScoped<PlanDrafter>();

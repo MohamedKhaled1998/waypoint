@@ -130,7 +130,7 @@ public static class Pauses
         {
             p.ResumedAt = now;
             await RecordCoveredAsync(db, p, ct);
-            jobs.Add(JobKinds.WelcomeBack, p.UserId, new Dictionary<string, Guid> { ["pauseId"] = p.Id });
+            jobs.Add(JobKinds.WelcomeBack, p.UserId, new Dictionary<string, Guid> { ["pauseId"] = p.Id }, p.AspirationId);
         }
     }
 
@@ -139,7 +139,7 @@ public static class Pauses
     {
         await RecordCoveredAsync(db, pause, ct);
         if (pause.EndsAt is { } end && pause.ScheduledActionId is null)
-            jobs.Add(JobKinds.WelcomeBack, pause.UserId, new Dictionary<string, Guid> { ["pauseId"] = pause.Id }, delay: end - pause.StartsAt);
+            jobs.Add(JobKinds.WelcomeBack, pause.UserId, new Dictionary<string, Guid> { ["pauseId"] = pause.Id }, pause.AspirationId, delay: end - pause.StartsAt);
     }
 
     private static async Task RecordCoveredAsync(WaypointDb db, Pause pause, CancellationToken ct)
@@ -159,7 +159,7 @@ public static class Pauses
             pause.ResumedAt = now;
             await RecordCoveredAsync(db, pause, ct);
             if (pause.ScheduledActionId is null)
-                jobs.Add(JobKinds.WelcomeBack, pause.UserId, new Dictionary<string, Guid> { ["pauseId"] = pause.Id });
+                jobs.Add(JobKinds.WelcomeBack, pause.UserId, new Dictionary<string, Guid> { ["pauseId"] = pause.Id }, pause.AspirationId);
             await Silence.TouchAsync(db, jobs, clock, ct);
             await db.SaveChangesAsync(ct);
         }

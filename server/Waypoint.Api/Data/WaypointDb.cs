@@ -237,6 +237,8 @@ public sealed class WaypointDb(DbContextOptions<WaypointDb> options, CurrentUser
             e.HasQueryFilter(p => p.UserId == CurrentUserId);
         });
         b.Entity<User>().Property(u => u.RefreshTime).HasMaxLength(5).HasDefaultValue("18:00");
+        b.Entity<User>().Property(u => u.QuietStart).HasMaxLength(5).HasDefaultValue("21:30");
+        b.Entity<User>().Property(u => u.QuietEnd).HasMaxLength(5).HasDefaultValue("07:00");
         b.Entity<PlanVersion>().Property(p => p.ChangesJson).HasColumnType("longtext");
         b.Entity<WeeklyRefresh>(e =>
         {

@@ -110,15 +110,19 @@ public sealed class PushNotifier(WaypointDb db, IPushSender sender, TimeProvider
     }
 }
 
-/// <summary>Posts a Coach message the user didn't ask for, and queues its push (the job holds the message ID only).</summary>
+/// <summary>
+/// Posts a Coach message the user didn't ask for, and queues its push (the job holds the message ID only).
+/// It takes the <see cref="ContactGate"/>'s Send decision as a permit, so no sender can skip the gate.
+/// </summary>
 public sealed class CoachMessenger(WaypointDb db, JobQueue jobs, TimeProvider clock, Waypoint.Api.Auth.CurrentUser me)
 {
-    public async Task PostUnpromptedAsync(Guid? aspirationId, string text, CancellationToken ct, string? card = null, string? cardJson = null)
+    public async Task PostUnpromptedAsync(GateDecision.Send permit, Guid? aspirationId, string text, CancellationToken ct, string? card = null, string? cardJson = null)
     {
+        ArgumentNullException.ThrowIfNull(permit);
         var message = new ChatMessage
         {
             Id = Guid.NewGuid(), UserId = me.Id!.Value, Role = "coach", Text = text, AspirationId = aspirationId,
-            CreatedAt = clock.GetUtcNow().UtcDateTime, Card = card, CardJson = cardJson,
+            CreatedAt = clock.GetUtcNow().UtcDateTime, Card = card, CardJson = cardJson, Unprompted = true,
         };
         db.ChatMessages.Add(message);
         jobs.Add(JobKinds.PushMessage, me.Id.Value, new Dictionary<string, Guid> { ["chatMessageId"] = message.Id }, aspirationId);

@@ -31,7 +31,7 @@ public static class Silence
     }
 }
 
-public sealed class SilenceChecker(WaypointDb db, JobQueue jobs, CoachMessenger messenger, ICoachModelClient model, IOptions<CoachOptions> options,
+public sealed class SilenceChecker(WaypointDb db, JobQueue jobs, CoachMessenger messenger, ContactGate gate, ICoachModelClient model, IOptions<CoachOptions> options,
     TimeProvider clock, CurrentUser me)
 {
     public const string Card = "silence";
@@ -52,6 +52,7 @@ public sealed class SilenceChecker(WaypointDb db, JobQueue jobs, CoachMessenger 
         if (!await db.PlanVersions.AnyAsync(p => p.Status == PlanVersionStatus.Approved, ct)) return;
         var last = user.LastActiveAt ?? user.CreatedAt;
         var silent = now - last;
+        TimeSpan? heldFor = null;
         var target = silent >= Silence.AutoPause ? 3 : silent >= Silence.SecondNudge ? 2 : silent >= Silence.FirstNudge ? 1 : 0;
 
         if (target > user.SilenceStage)
@@ -71,15 +72,22 @@ public sealed class SilenceChecker(WaypointDb db, JobQueue jobs, CoachMessenger 
                     await Pauses.StartAsync(db, jobs, pause, ct);
                     await db.SaveChangesAsync(ct); // the Pause stands even if the words come late
                 }
-                var text = await PhraseAsync(target, ct);
-                user.SilenceStage = target;
-                await messenger.PostUnpromptedAsync(null, text, ct, Card, JsonSerializer.Serialize(new { stage = target }, JsonSerializerOptions.Web));
+                var decision = await gate.DecideAsync(new UnpromptedRequest(UnpromptedKind.SilenceNudge, null), ct);
+                if (decision is GateDecision.Send permit)
+                {
+                    var text = await PhraseAsync(target, ct);
+                    user.SilenceStage = target;
+                    await messenger.PostUnpromptedAsync(permit, null, text, ct, Card, JsonSerializer.Serialize(new { stage = target }, JsonSerializerOptions.Web));
+                }
+                else if (decision is GateDecision.Hold hold) heldFor = hold.Until - now; // the nudge waits; same rung next time
             }
         }
 
         // The next rung, counted from the last activity.
         var next = user.SilenceStage switch { 0 => Silence.FirstNudge, 1 => Silence.SecondNudge, 2 => Silence.AutoPause, _ => (TimeSpan?)null };
-        if (next is { } rung)
+        if (heldFor is { } wait)
+            jobs.Add(JobKinds.SilenceCheck, user.Id, new Dictionary<string, Guid> { ["userId"] = user.Id }, delay: wait);
+        else if (next is { } rung)
             jobs.Add(JobKinds.SilenceCheck, user.Id, new Dictionary<string, Guid> { ["userId"] = user.Id },
                 delay: last + rung - now > TimeSpan.Zero ? last + rung - now : TimeSpan.FromHours(1));
         await db.SaveChangesAsync(ct);
