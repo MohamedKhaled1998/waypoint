@@ -1,26 +1,6 @@
 export const en = {
   tabs: { today: 'Today', progress: 'Progress', coach: 'Coach' },
-  firstRun: {
-    step: 'Step {{n}} of {{of}}',
-    cardOf: '{{n}} of {{of}}',
-    cards: {
-      name: { title: 'Name what you want', body: 'Say it in your own words: an Aspiration, big or small.' },
-      chart: { title: 'Your Coach charts the way', body: 'A short Interview, then a Plan of Milestones and Actions that fits your week.' },
-      bend: { title: 'It bends when life does', body: 'Miss a day and the Plan adjusts, with no blame.' },
-    },
-    draftingTitle: 'Drafting your Plan',
-    draftingBody: 'This usually takes under a minute. Your Plan will wait on Today when it is ready.',
-    leaveForNow: 'Leave it for now',
-    tour: {
-      tryTitle: 'Try it now',
-      tryBody: 'Tap ✓ on the Now card to check in your first Action.',
-      wrapTitle: 'That is your first Check-in',
-      wrapBody: 'Each day, Today shows what is next. Tap ✓, Partly or Skip, and your Coach adjusts the Plan.',
-      done: 'Got it',
-    },
-  },
   settings: {
-    replayTour: 'Replay the Today tour',
     title: 'Settings',
     open: 'Settings',
     account: 'Account',

@@ -14,36 +14,10 @@ import { phonePush, setUpPushChannel } from '../push/native';
 import { registerPushToken, routeForPush } from '../push/push';
 import { SessionProvider, useSession } from '../auth/SessionProvider';
 import { View } from 'react-native';
-import { resumeDecision } from '../firstrun/firstRun';
-import { httpPlanApi } from '../plan/api';
-import { firstRun, settlePermissions, useFirstRun } from '../firstrun/native';
 
 function Routes() {
   const { status, phone, getAccessToken, renewAccess } = useSession();
   const router = useRouter();
-
-  // A signed-in phone moves past Sign in, and an interrupted first run reopens in the step it left (once per launch).
-  const first = useFirstRun();
-  const resumed = useRef(false);
-  useEffect(() => {
-    if (status === 'signedOut') resumed.current = false;
-    if (status !== 'signedIn' || !first.loaded || resumed.current) return;
-    resumed.current = true;
-    void (async () => {
-      await firstRun.signedIn();
-      const step = firstRun.getState().step;
-      const waiting =
-        step === 'planReview'
-          ? await httpPlanApi({ getAccessToken, renewAccess })
-              .summaries()
-              .then((plans) => plans.find((p) => p.pendingVersionId)?.pendingVersionId ?? null)
-              .catch(() => null)
-          : null;
-      const { route, settlePermissions: settle } = resumeDecision(step, waiting);
-      if (settle) await settlePermissions();
-      if (route && route !== '/' && route !== '/sign-in') router.replace(route as never);
-    })();
-  }, [status, first.loaded, router, getAccessToken, renewAccess]);
 
   // Arm the next reminders on app start, whenever the cache changes (a pull, a Check-in) and whenever one fires.
   useEffect(() => {
@@ -100,8 +74,6 @@ function Routes() {
     >
       <Stack.Protected guard={status === 'signedIn'}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="aspiration" options={{ headerShown: false, gestureEnabled: false }} />
-        <Stack.Screen name="drafting" options={{ headerShown: false, gestureEnabled: false }} />
         <Stack.Screen name="interview" options={{ title: t('interview.title') }} />
         <Stack.Screen name="plan-review" options={{ title: t('plan.title') }} />
         <Stack.Screen name="settings" options={{ title: t('settings.title') }} />

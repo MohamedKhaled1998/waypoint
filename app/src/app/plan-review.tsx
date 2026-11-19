@@ -7,9 +7,6 @@ import { TALK_IT_THROUGH_ROUTE, changeRows, confirmFacts, confirmModel, landingT
 import { usePlanReview } from '../plan/usePlan';
 import { askedFlag, phonePermissions } from '../reminders/native';
 import { askOnceAfterFirstPlan } from '../reminders/permissions';
-import { firstRun, settlePermissions } from '../firstrun/native';
-import { StepCounter } from '../ui/StepCounter';
-import { useFirstRun } from '../firstrun/native';
 import { rearmReminders } from '../reminders/rearm';
 import { Banner } from '../ui/Banner';
 import { Button } from '../ui/Button';
@@ -31,16 +28,8 @@ export default function PlanReviewScreen() {
   // Right after the first Plan is approved, once: notifications, then exact alarms, one at a time, each with its reason.
   const outcome = review.outcome;
   useEffect(() => {
-    if (outcome !== 'approved') return;
-    void firstRun.planApproved().then(() => settlePermissions()).then(() => {
-      if (firstRun.getState().step === 'tourTry') router.replace('/');
-    });
-  }, [outcome, router]);
-  const { step: firstRunStep } = useFirstRun();
-  // Opening the draft from Today after leaving the wait is still the first Plan's review.
-  useEffect(() => {
-    if (firstRunStep === 'drafting') void firstRun.advance('planReview');
-  }, [firstRunStep]);
+    if (outcome === 'approved') void askOnceAfterFirstPlan(phonePermissions, askedFlag).then(() => rearmReminders()).catch(() => console.warn('reminders: arming failed'));
+  }, [outcome]);
 
   const show = (next: PlanTab) => {
     setChosen(next);
@@ -69,7 +58,6 @@ export default function PlanReviewScreen() {
   return (
     <View style={styles.container}>
       <Stack.Screen options={{ title: t('plan.title') }} />
-      {firstRunStep === 'drafting' || firstRunStep === 'planReview' || firstRunStep === 'permissions' ? <View style={styles.pad}><StepCounter step={firstRunStep} /></View> : null}
       <ScrollView contentContainerStyle={styles.pad}>
         {review.outcome === 'redrafting' ? <Banner message={t('plan.redrafting')} /> : null}
         {review.outcome === 'queued' ? <Banner message={t('plan.approveQueued')} /> : null}

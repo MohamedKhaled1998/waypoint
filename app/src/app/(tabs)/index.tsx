@@ -3,7 +3,6 @@ import { Pressable, ScrollView, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet } from 'react-native-unistyles';
-import { firstRun, useFirstRun } from '../../firstrun/native';
 import { useUnfinishedInterview } from '../../interview/useInterview';
 import { usePlanBanners, usePlanSummaries } from '../../plan/usePlan';
 import { ActionSheet } from '../../today/ActionSheet';
@@ -22,7 +21,6 @@ export default function TodayScreen() {
   const unfinished = useUnfinishedInterview();
   const { drafting, late, retryDraft, waitingVersionId } = usePlanBanners();
   const { plans } = usePlanSummaries();
-  const { step: tourStep } = useFirstRun();
   const { actions, slots, loaded, task, undo, failed, move } = useToday();
   const [sheet, setSheet] = useState<{ action: ScheduledActionView; choice?: CheckInState } | null>(null);
 
@@ -63,21 +61,6 @@ export default function TodayScreen() {
           </View>
         ) : null}
         {unfinished || waitingVersionId ? pills : null}
-        {tourStep === 'tourTry' ? (
-          <Card>
-            <Text variant="caption" muted>{t('firstRun.step', { n: 1, of: 2 })}</Text>
-            <Text variant="heading">{t('firstRun.tour.tryTitle')}</Text>
-            <Text muted>{t('firstRun.tour.tryBody')}</Text>
-          </Card>
-        ) : null}
-        {tourStep === 'tourWrapUp' ? (
-          <Card>
-            <Text variant="caption" muted>{t('firstRun.step', { n: 2, of: 2 })}</Text>
-            <Text variant="heading">{t('firstRun.tour.wrapTitle')}</Text>
-            <Text muted>{t('firstRun.tour.wrapBody')}</Text>
-            <Button title={t('firstRun.tour.done')} onPress={() => void firstRun.finishTour()} />
-          </Card>
-        ) : null}
 
         {today.state === 'none' ? (
           <>
@@ -111,10 +94,7 @@ export default function TodayScreen() {
               <NowCard
                 now={today.nowCard}
                 onOpen={(action) => setSheet({ action })}
-                onQuick={(action, state) => {
-                  void task.quick(action, state);
-                  void firstRun.nowCardTapped(state);
-                }}
+                onQuick={(action, state) => void task.quick(action, state)}
                 onPartly={(action) => setSheet({ action, choice: 'partly' })}
               />
             ) : null}
