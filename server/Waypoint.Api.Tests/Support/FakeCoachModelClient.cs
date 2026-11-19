@@ -30,7 +30,7 @@ public sealed class FakeCoachModelClient : ICoachModelClient
     {
         if (req.Kind != CoachCallKind.WeeklyRefresh) return null;
         var codes = System.Text.Json.JsonDocument.Parse(req.Turns[0].Text).RootElement.GetProperty("changes").EnumerateArray()
-            .Select(c => c.GetProperty("code").GetString()!).ToList();
+            .Select(c => c.GetProperty("code").GetString()!).Distinct().ToList();
         return ["```json\n" + System.Text.Json.JsonSerializer.Serialize(new { rationale = "Next week, gently.", reasons = codes.ToDictionary(c => c, c => "You kept up, so a small step.") }) + "\n```"];
     }
 

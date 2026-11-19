@@ -5,7 +5,7 @@ import * as Notifications from 'expo-notifications';
 import { useEffect, useRef } from 'react';
 import '../reminders/task';
 import { setUpReminders } from '../reminders/native';
-import { rearmReminders } from '../reminders/rearm';
+import { noteInteraction, rearmReminders } from '../reminders/rearm';
 import { registerReminderTask } from '../reminders/task';
 import { StatusBar } from 'expo-status-bar';
 import { useTranslation } from 'react-i18next';
@@ -22,6 +22,7 @@ function Routes() {
   // Arm the next reminders on app start, whenever the cache changes (a pull, a Check-in) and whenever one fires.
   useEffect(() => {
     if (status !== 'signedIn') return;
+    noteInteraction(); // opening the app counts
     const rearm = () => void rearmReminders().catch(() => console.warn('reminders: arming failed'));
     void setUpReminders().then(registerReminderTask).then(rearm).catch(() => console.warn('reminders: arming failed'));
     const unsubscribe = phone.subscribe(rearm);

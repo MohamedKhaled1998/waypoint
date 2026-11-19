@@ -11,7 +11,7 @@ import { handleReminderResponse, type ReminderResponse } from './headless';
 import { expoNotifier } from './native';
 import { acceptRefresh } from '../push/native';
 import { handleRefreshResponse, type RefreshResponse } from '../push/push';
-import { rearmReminders } from './rearm';
+import { noteInteraction, rearmReminders } from './rearm';
 
 export const REMINDER_TASK = 'waypoint-reminder-response';
 
@@ -37,7 +37,10 @@ TaskManager.defineTask<Notifications.NotificationTaskPayload>(REMINDER_TASK, asy
     now: () => new Date(),
     newId: () => `ci-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
     dismiss: (id) => expoNotifier.dismiss(id),
-    rearm: () => rearmReminders(),
+    rearm: () => {
+      noteInteraction(); // a button in the shade is an interaction
+      return rearmReminders();
+    },
   });
   // The send runs behind the enqueue; give it the task's time to land, and re-arm either way.
   await sync.sync();

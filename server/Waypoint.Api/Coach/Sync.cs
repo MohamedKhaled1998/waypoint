@@ -36,6 +36,7 @@ public static class Sync
         var versionIds = latest.Where(c => c.Kind == "plan_version").Select(c => c.EntityId).ToList();
 
         var slots = await db.Slots.ToListAsync(ct);
+        var onSkip = await db.Aspirations.ToDictionaryAsync(a => a.Id, a => a.OnSkip, ct);
         var actions = await db.ScheduledActions.Where(a => actionIds.Contains(a.Id)).ToDictionaryAsync(a => a.Id, ct);
         var checkIns = await db.CheckIns.Where(c => actionIds.Contains(c.ScheduledActionId)).ToDictionaryAsync(c => c.ScheduledActionId, ct);
         var messages = await db.ChatMessages.Where(m => messageIds.Contains(m.Id)).ToDictionaryAsync(m => m.Id, ct);
@@ -47,7 +48,7 @@ public static class Sync
         object? Data(Change c) => c.Kind switch
         {
             "scheduled_action" => actions.TryGetValue(c.EntityId, out var a)
-                ? Plans.ActionView(a, slots.FirstOrDefault(s => s.Id == a.SlotId), checkIns.GetValueOrDefault(a.Id)) : null,
+                ? Plans.ActionView(a, slots.FirstOrDefault(s => s.Id == a.SlotId), checkIns.GetValueOrDefault(a.Id), onSkip.GetValueOrDefault(a.AspirationId)) : null,
             "chat_message" => messages.TryGetValue(c.EntityId, out var m) ? CoachChat.View(m, answered.Contains(m.Id)) : null,
             "milestone" => milestones.TryGetValue(c.EntityId, out var ms)
                 ? new Plans.MilestoneView(ms.Id, ms.Date, ms.Title, ms.ReachedWhen, ms.Kind, ms.State) : null,

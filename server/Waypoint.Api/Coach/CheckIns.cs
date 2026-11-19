@@ -143,7 +143,15 @@ public sealed class CheckInReplies(WaypointDb db, ICoachModelClient model, IOpti
 
     public const string SystemPrompt =
         "You are the Coach in Waypoint. The user just checked in on an Action. Reply in one or two warm, plain sentences, " +
-        "without blame or pressure. Never invent facts about the user's progress.";
+        "without blame or pressure. Never invent facts about the user's progress. " + MissTone.Rules;
+
+    /// <summary>What a skip is answered with first, by the Aspiration's chosen reaction.</summary>
+    public static string SkipReaction(string onSkip) => onSkip switch
+    {
+        "ask_why" => "The user wants the Coach to ask what got in the way: acknowledge the skip in one line, then ask what got in the way, with an easy out.",
+        "quiet_replan" => "The user wants the Coach to quietly adjust: acknowledge the skip in one line and say you will quietly fit the Plan around it, without asking anything.",
+        _ => "The user wants the Coach to gently check in: acknowledge the skip in one line, then gently check in on how they are, with an easy out.",
+    };
 
     public async Task ReplyAsync(Guid checkInId, CancellationToken ct)
     {
@@ -151,6 +159,20 @@ public sealed class CheckInReplies(WaypointDb db, ICoachModelClient model, IOpti
         if (checkIn is null) return; // undone
         var echo = await db.ChatMessages.FirstOrDefaultAsync(m => m.Id == checkIn.EchoMessageId, ct);
         if (echo is null || await db.ChatMessages.AnyAsync(m => m.InReplyToId == echo.Id, ct)) return;
+
+        var action = await db.ScheduledActions.FirstOrDefaultAsync(a => a.Id == checkIn.ScheduledActionId, ct);
+        var skipped = checkIn.State == CheckInState.Skipped;
+        var system = SystemPrompt;
+        MakeUpOffer? offer = null;
+        if (skipped && action is not null)
+        {
+            var aspiration = await db.Aspirations.FirstOrDefaultAsync(a => a.Id == action.AspirationId, ct);
+            system += " " + SkipReaction(aspiration?.OnSkip ?? "gentle_check");
+            offer = await MakeUps.FindAsync(db, action, clock, ct);
+            system += offer is null
+                ? " There is nothing to move: the next step is simply the next planned session. Do not offer to reschedule."
+                : $" The app found a free Slot on {offer.Date:dddd} ({offer.SlotLabel}): your one next step is to offer moving the session there, if they want.";
+        }
 
         var kind = checkIn.Note is null ? CoachCallKind.CheckInReplyNoNote : CoachCallKind.CheckInReplyWithNote;
         var choice = options.Value.For(kind);
@@ -160,14 +182,18 @@ public sealed class CheckInReplies(WaypointDb db, ICoachModelClient model, IOpti
         if (checkIn.Note is not null) turns[^1] = turns[^1] with { Text = $"{turns[^1].Text}\n{checkIn.Note}" };
 
         var reply = new StringBuilder();
-        await foreach (var chunk in model.StreamAsync(new CoachRequest(kind, choice.Provider, choice.Model, SystemPrompt, turns), ct))
+        await foreach (var chunk in model.StreamAsync(new CoachRequest(kind, choice.Provider, choice.Model, system, turns), ct))
             reply.Append(chunk);
         if (reply.Length == 0) throw new CoachUnavailableException("empty_reply");
+        // The Coach is late rather than blaming: a reply about a miss that does fails the job, which retries.
+        if (checkIn.State != CheckInState.Done && MissTone.Violates(reply.ToString())) throw new CoachUnavailableException("reply_tone");
 
         db.ChatMessages.Add(new ChatMessage
         {
             Id = Guid.NewGuid(), UserId = echo.UserId, Role = "coach", Text = reply.ToString(), AspirationId = echo.AspirationId,
             InReplyToId = echo.Id, CreatedAt = clock.GetUtcNow().UtcDateTime,
+            Card = offer is null ? null : "make_up",
+            CardJson = offer is null ? null : JsonSerializer.Serialize(new { scheduledActionId = offer.ScheduledActionId, date = offer.Date.ToString("yyyy-MM-dd"), slotId = offer.SlotId }, JsonSerializerOptions.Web),
         });
         await db.SaveChangesAsync(ct);
     }

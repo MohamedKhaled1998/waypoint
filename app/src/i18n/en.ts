@@ -191,6 +191,11 @@ export const en = {
     done: 'Done',
     partly: 'Partly',
     skip: 'Skip',
+    followUp: {
+      gentle_check: "No worries if today got away from you. Want to tell me how it went? It's fine to skip.",
+      quiet_replan: "All good if now isn't the moment. Tap Skip and I'll fit it in later.",
+      ask_why: "That's fine if it didn't happen. What got in the way? A quick tap is enough, or skip it.",
+    },
     partlySubmit: 'Send',
     partlyPlaceholder: 'Minutes you did',
     permission: {

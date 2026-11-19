@@ -14,6 +14,7 @@ public static class JobKinds
     public const string WeeklyRefresh = "weekly_refresh";
     public const string RefreshApply = "refresh_apply";
     public const string RefreshPrompt = "refresh_prompt";
+    public const string Rethink = "rethink";
 }
 
 /// <summary>Adds jobs. Payloads are row IDs only, so no free text can reach the jobs table.</summary>
@@ -95,6 +96,9 @@ public sealed class JobRunner(IServiceScopeFactory scopes, TimeProvider clock, I
                     break;
                 case JobKinds.RefreshPrompt:
                     await sp.GetRequiredService<Waypoint.Api.Push.PushNotifier>().SendRefreshPromptAsync(ids["refreshId"], ct);
+                    break;
+                case JobKinds.Rethink:
+                    await sp.GetRequiredService<Rethinks>().OpenAsync(ids["aspirationId"], ct);
                     break;
                 default:
                     throw new InvalidOperationException("unknown_job_kind");

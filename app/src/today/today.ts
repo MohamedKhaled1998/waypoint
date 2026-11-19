@@ -27,6 +27,10 @@ export type ScheduledActionView = {
   slotStart: string | null;
   slotEnd: string | null;
   title: string;
+  /** habit: recurring; task: one-off; catch_up: extra time after a shortfall. */
+  /** The Aspiration's reaction to a skip, which words the Follow-up. */
+  onSkip?: 'gentle_check' | 'quiet_replan' | 'ask_why';
+  kind?: 'habit' | 'task' | 'catch_up';
   minutes: number;
   checkIn: CheckInView | null;
   /** now: at the Slot's start; get_ready: once, `reminderLeadMinutes` ahead. */
