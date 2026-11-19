@@ -35,13 +35,13 @@ export function reminderTime(a: ScheduledActionView): Date | null {
 }
 
 /**
- * Every reminder still to come, in time order: one per Action, none for an Action that is checked in, switched off,
+ * Every reminder still to come, in time order: one per Action, none for an Action that is checked in, set aside by a Pause, switched off,
  * or already past. Never a second ping at the start of a get-ready Action.
  */
 export function upcomingReminders(actions: ScheduledActionView[], now: Date): Reminder[] {
   const out: Reminder[] = [];
   for (const a of actions) {
-    if (a.reminderOn === false || a.checkIn) continue;
+    if (a.reminderOn === false || a.checkIn || a.setAside) continue;
     const at = reminderTime(a);
     if (!at || at.getTime() <= now.getTime()) continue;
     out.push({ actionId: a.id, at, title: a.title, text: a.reminderText ?? null, aspirationId: a.aspirationId });

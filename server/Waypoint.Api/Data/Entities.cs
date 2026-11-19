@@ -16,6 +16,10 @@ public sealed class User
     public DayOfWeek RefreshDay { get; set; } = DayOfWeek.Sunday;
     /// <summary>HH:mm, UTC like every other time the server keeps; default 18:00.</summary>
     public string RefreshTime { get; set; } = "18:00";
+    /// <summary>The last Check-in, message or app open; silence is counted from here.</summary>
+    public DateTime? LastActiveAt { get; set; }
+    /// <summary>How far the silence ladder has gone since LastActiveAt: 0 none, 1 gentle nudge, 2 nudge offering a Pause, 3 auto-Pause.</summary>
+    public int SilenceStage { get; set; }
 }
 
 public static class RefreshStatus
@@ -319,4 +323,36 @@ public sealed class CheckIn
     public DateTime TappedAt { get; set; }
     /// <summary>The chat message that echoes this Check-in.</summary>
     public Guid EchoMessageId { get; set; }
+}
+
+public static class PauseStarters
+{
+    public const string User = "user";
+    public const string Coach = "coach";
+}
+
+/// <summary>
+/// A stretch of time set aside: for one Aspiration, for everything (both null), or for one Action. User-owned.
+/// It ends at <see cref="EndsAt"/> (null = open until resumed) or when the user resumes, whichever comes first.
+/// </summary>
+public sealed class Pause
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    /// <summary>Set by the phone, so a resend is idempotent.</summary>
+    public required string ClientId { get; set; }
+    public Guid? AspirationId { get; set; }
+    /// <summary>"Just this Action": a Pause of one scheduled Action.</summary>
+    public Guid? ScheduledActionId { get; set; }
+    public DateTime StartsAt { get; set; }
+    public DateTime? EndsAt { get; set; }
+    public DateTime? ResumedAt { get; set; }
+    /// <summary><see cref="PauseStarters"/>.</summary>
+    public required string StartedBy { get; set; }
+    /// <summary>When the one "welcome back" was posted.</summary>
+    public DateTime? WelcomedAt { get; set; }
+    /// <summary>catch_up or shift_dates, as the user answered the welcome back.</summary>
+    public string? ReturnChoice { get; set; }
+    /// <summary>When the first week back was run one notch lower.</summary>
+    public DateTime? EasedAt { get; set; }
 }

@@ -27,10 +27,6 @@ export type ScheduledActionView = {
   slotStart: string | null;
   slotEnd: string | null;
   title: string;
-  /** habit: recurring; task: one-off; catch_up: extra time after a shortfall. */
-  /** The Aspiration's reaction to a skip, which words the Follow-up. */
-  onSkip?: 'gentle_check' | 'quiet_replan' | 'ask_why';
-  kind?: 'habit' | 'task' | 'catch_up';
   minutes: number;
   checkIn: CheckInView | null;
   /** now: at the Slot's start; get_ready: once, `reminderLeadMinutes` ahead. */
@@ -39,6 +35,8 @@ export type ScheduledActionView = {
   /** Written ahead by the server, so a reminder needs no model call. Null until it arrives. */
   reminderText?: string | null;
   reminderOn?: boolean;
+  /** Inside a Pause: counts neither as done nor missed, and has no reminder. */
+  setAside?: boolean;
 };
 
 export type TodayModel = {

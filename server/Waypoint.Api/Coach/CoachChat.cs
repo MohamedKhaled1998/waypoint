@@ -43,7 +43,7 @@ public static class CoachChat
     };
 
     private static async Task Send(SendMessageRequest req, HttpContext http, WaypointDb db, CurrentUser me,
-        ICoachModelClient model, IOptions<CoachOptions> options, TimeProvider clock, ILoggerFactory logs)
+        ICoachModelClient model, IOptions<CoachOptions> options, TimeProvider clock, JobQueue jobs, ILoggerFactory logs)
     {
         var log = logs.CreateLogger("Waypoint.Coach.Chat");
         var ct = http.RequestAborted;
@@ -53,6 +53,8 @@ public static class CoachChat
             return;
         }
 
+        await Silence.TouchAsync(db, jobs, clock, ct);
+        await db.SaveChangesAsync(ct);
         var user = await db.ChatMessages.FirstOrDefaultAsync(m => m.ClientId == req.ClientId, ct);
         if (user is null)
         {
@@ -85,11 +87,15 @@ public static class CoachChat
             var choice = options.Value.For(CoachCallKind.Chat);
             var window = await db.ChatMessages.Where(m => m.Seq <= user.Seq)
                 .OrderByDescending(m => m.Seq).Take(WindowSize).OrderBy(m => m.Seq).ToListAsync(ct);
+            var system = SystemPrompt;
+            if (await PauseFromChatAsync(user, db, jobs, model, options.Value, clock, ct) is { } started)
+                system += " The user asked for a Pause in this message and it has already started, with no approval needed: " + started +
+                    " Confirm it in a line or two, warmly, and say they can resume any time. Do not say you will need to do anything.";
             var turns = window.SkipWhile(m => m.Role != "user")
                 .Select(m => new CoachTurn(m.Role == "user" ? "user" : "assistant", m.Text)).ToList();
 
             await foreach (var chunk in model.StreamAsync(
-                new CoachRequest(CoachCallKind.Chat, choice.Provider, choice.Model, SystemPrompt, turns), ct))
+                new CoachRequest(CoachCallKind.Chat, choice.Provider, choice.Model, system, turns), ct))
             {
                 reply.Append(chunk);
                 await Write(http, "delta", new { text = chunk }, ct);
@@ -118,6 +124,76 @@ public static class CoachChat
                 user.Id, watch.ElapsedMilliseconds, ex.GetType().Name);
             await Write(http, "error", new { type = "coach_unavailable" }, CancellationToken.None);
         }
+    }
+
+    private const string PauseIntentSystem = """
+        You read one message from a user of a coaching app and decide whether they are asking to step back (a Pause) from
+        their Aspirations: for example "I'm sick this week", "on holiday till the 20th", "pause everything for now".
+        The first turn is JSON: "today" (a date), "aspirations" (id and shortName) and "message". Reply with only JSON:
+        {"pause": null} when they are not asking, otherwise
+        {"pause": {"aspirationId": <id from the list, or null for everything>, "span": "today" | "until" | "open", "until": "yyyy-MM-dd" (last day, only for "until")}}.
+        Use "open" when they give no end. Pick one Aspiration only when they clearly name it.
+        """;
+
+    /// <summary>
+    /// The model only reads the message; the server decides and starts the Pause (no approval) and says what it did.
+    /// Returns a plain description for the reply, or null when nothing was started. Safe to run again on a resend.
+    /// </summary>
+    private static async Task<string?> PauseFromChatAsync(ChatMessage user, WaypointDb db, JobQueue jobs, ICoachModelClient model,
+        CoachOptions options, TimeProvider clock, CancellationToken ct)
+    {
+        var clientId = "chat-" + user.Id.ToString("N");
+        var now = clock.GetUtcNow().UtcDateTime;
+        var aspirations = await db.Aspirations.Where(a => a.Status == "active").ToListAsync(ct);
+        var made = await db.Pauses.FirstOrDefaultAsync(p => p.ClientId == clientId, ct);
+        if (made is null)
+        {
+            var choice = options.For(CoachCallKind.PauseIntent);
+            var input = new System.Text.Json.Nodes.JsonObject
+            {
+                ["today"] = DateOnly.FromDateTime(now).ToString("yyyy-MM-dd"),
+                ["aspirations"] = new System.Text.Json.Nodes.JsonArray(aspirations.Select(a => (System.Text.Json.Nodes.JsonNode)
+                    new System.Text.Json.Nodes.JsonObject { ["id"] = a.Id, ["shortName"] = a.ShortName }).ToArray()),
+                ["message"] = user.Text,
+            };
+            var raw = new StringBuilder();
+            await foreach (var chunk in model.StreamAsync(new CoachRequest(CoachCallKind.PauseIntent, choice.Provider, choice.Model,
+                PauseIntentSystem, [new CoachTurn("user", input.ToJsonString())]), ct))
+                raw.Append(chunk);
+
+            var text = raw.ToString();
+            var open = text.IndexOf('{');
+            var close = text.LastIndexOf('}');
+            if (open < 0 || close < open) return null;
+            JsonElement pick;
+            try { pick = JsonDocument.Parse(text[open..(close + 1)]).RootElement; }
+            catch (JsonException) { return null; }
+            if (pick.ValueKind != JsonValueKind.Object || !pick.TryGetProperty("pause", out var p) || p.ValueKind != JsonValueKind.Object) return null;
+
+            Guid? aspirationId = null;
+            if (p.TryGetProperty("aspirationId", out var a) && a.ValueKind == JsonValueKind.String)
+            {
+                if (!Guid.TryParse(a.GetString(), out var id) || aspirations.All(x => x.Id != id)) return null; // not an Aspiration of theirs: do nothing
+                aspirationId = id;
+            }
+            var span = p.TryGetProperty("span", out var sp) && sp.ValueKind == JsonValueKind.String ? sp.GetString() : null;
+            string? until = p.TryGetProperty("until", out var u) && u.ValueKind == JsonValueKind.String ? u.GetString() : null;
+            if (span is not ("today" or "until" or "open") || (span == "until") != (until is not null)) return null;
+            if (!Pauses.TryEnd(span == "open", span == "until" ? until : null, now, out var endsAt)) return null;
+
+            made = new Pause
+            {
+                Id = Guid.NewGuid(), UserId = user.UserId, ClientId = clientId, AspirationId = aspirationId,
+                StartsAt = now, EndsAt = endsAt, StartedBy = PauseStarters.User,
+            };
+            db.Pauses.Add(made);
+            await Pauses.StartAsync(db, jobs, made, ct);
+            await db.SaveChangesAsync(ct);
+        }
+
+        var scope = made.AspirationId is { } id2 ? "the Aspiration \"" + aspirations.FirstOrDefault(x => x.Id == id2)?.ShortName + "\"" : "everything";
+        var ends = made.EndsAt is { } e ? "until " + DateOnly.FromDateTime(e.AddTicks(-1)).ToString("yyyy-MM-dd") + " (the end of that day)" : "until they resume";
+        return $"a Pause of {scope}, {ends}.";
     }
 
     private static async Task Write(HttpContext http, string name, object data, CancellationToken ct)

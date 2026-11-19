@@ -1,7 +1,7 @@
 /** What the phone keeps for the server's rows, by kind. */
-export type CacheKind = 'scheduled_action' | 'milestone' | 'chat_message' | 'plan_version' | 'slot';
+export type CacheKind = 'scheduled_action' | 'milestone' | 'chat_message' | 'plan_version' | 'slot' | 'pauses';
 
-export type OutboxKind = 'check_in' | 'undo_check_in' | 'message' | 'approve_plan' | 'move_action';
+export type OutboxKind = 'check_in' | 'undo_check_in' | 'message' | 'approve_plan' | 'move_action' | 'pause' | 'resume';
 
 /** One thing the user did, waiting to be sent. `clientId` is also what the server dedupes on. */
 export type OutboxItem = { clientId: string; kind: OutboxKind; payload: Record<string, unknown>; queuedAt: string };

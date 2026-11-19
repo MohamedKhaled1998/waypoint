@@ -1,5 +1,5 @@
 import * as Notifications from 'expo-notifications';
-import { Platform } from 'react-native';
+import { Linking, Platform } from 'react-native';
 import { fetch } from 'expo/fetch';
 import i18n from '../i18n';
 import { REFRESH_CATEGORY, REFRESH_LOOKS_GOOD, type PushRegistration } from './push';
@@ -60,4 +60,13 @@ export async function acceptRefresh(auth: Auth, refreshId: string) {
   let res = await go();
   if (res.status === 401 && (await auth.renewAccess())) res = await go();
   if (!res.ok) throw new Error(`weekly refresh ${res.status}`);
+}
+
+/** Deep-links to the device's battery settings, where the user can let Waypoint run in the background. */
+export async function openBatterySettings() {
+  try {
+    await Linking.sendIntent('android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS');
+  } catch {
+    await Linking.openSettings();
+  }
 }

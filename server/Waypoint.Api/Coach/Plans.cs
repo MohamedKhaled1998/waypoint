@@ -51,19 +51,19 @@ public static class Plans
         {
             var slots = await db.Slots.ToDictionaryAsync(s => s.Id, ct);
             var checkIns = await db.CheckIns.ToDictionaryAsync(c => c.ScheduledActionId, ct);
-            var onSkip = await db.Aspirations.ToDictionaryAsync(a => a.Id, a => a.OnSkip, ct);
+            var pauses = await db.Pauses.ToListAsync(ct);
             return Results.Ok((await db.ScheduledActions.OrderBy(a => a.Date).ThenBy(a => a.Title).ToListAsync(ct))
-                .Select(a => ActionView(a, slots.GetValueOrDefault(a.SlotId), checkIns.GetValueOrDefault(a.Id), onSkip.GetValueOrDefault(a.AspirationId))));
+                .Select(a => ActionView(a, slots.GetValueOrDefault(a.SlotId), checkIns.GetValueOrDefault(a.Id), Pauses.IsSetAside(pauses, a, checkIns.ContainsKey(a.Id)))));
         });
     }
 
-    /// <summary>The Aspiration's reaction to a skip rides along so the phone can word its Follow-up in that tone.</summary>
-    public static object ActionView(ScheduledAction a, Slot? slot, CheckIn? checkIn, string? onSkip = null) => new
+    public static object ActionView(ScheduledAction a, Slot? slot, CheckIn? checkIn, bool setAside = false) => new
     {
         a.Id, a.AspirationId, a.PlanVersionId, a.Date, SlotId = a.SlotId, Slot = slot?.Label, SlotStart = slot?.Start, SlotEnd = slot?.End,
-        a.Title, a.Minutes, Kind = a.HabitId is not null ? "habit" : a.TaskId is not null ? "task" : "catch_up",
-        ReminderKind = a.ReminderKind, ReminderLeadMinutes = a.ReminderLeadMinutes, ReminderText = a.ReminderText, ReminderOn = a.ReminderOn, OnSkip = onSkip,
+        a.Title, a.Minutes,
+        ReminderKind = a.ReminderKind, ReminderLeadMinutes = a.ReminderLeadMinutes, ReminderText = a.ReminderText, ReminderOn = a.ReminderOn,
         CheckIn = checkIn is null ? null : CheckIns.View(checkIn),
+        SetAside = setAside,
     };
 
     internal static async Task<IResult> Approve(Guid id, WaypointDb db, TimeProvider clock, JobQueue jobs, CancellationToken ct)
@@ -133,6 +133,8 @@ public static class Plans
         jobs.Add(JobKinds.ReminderText, version.UserId, new Dictionary<string, Guid> { ["planVersionId"] = id }, version.AspirationId);
         // The first approved Plan books the first Weekly refresh, after the Plan's first day.
         if (version.Reason == "first_plan")
+            await Silence.TouchAsync(db, jobs, clock, ct); // the user just approved their first Plan: silence counts from here
+        if (version.Reason == "first_plan")
             await WeeklyRefreshes.ScheduleNextAsync(db, jobs, clock, version.StartDate.ToDateTime(new TimeOnly(23, 59, 59), DateTimeKind.Utc), ct);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
@@ -160,12 +162,10 @@ public static class Plans
         await db.SaveChangesAsync(ct);
         var slot = await db.Slots.FirstOrDefaultAsync(s => s.Id == action.SlotId, ct);
         var checkIn = await db.CheckIns.FirstOrDefaultAsync(c => c.ScheduledActionId == id, ct);
-        return Results.Ok(ActionView(action, slot, checkIn));
+        return Results.Ok(ActionView(action, slot, checkIn, await Pauses.IsSetAsideAsync(db, action, checkIn is not null, ct)));
     }
 
-    /// <summary>An ID the draft stored, whether it was written as a Guid or as text.</summary>
-    private static Guid? Ref(JsonObject a, string name) =>
-        a[name] is JsonValue v && (v.TryGetValue<Guid>(out var g) || (v.TryGetValue<string>(out var s) && Guid.TryParse(s, out g))) ? g : null;
+    private static Guid? Ref(JsonObject a, string name) => Guid.TryParse(HandOff.Str(a, name), out var g) ? g : null;
 
     private static async Task<PlanVersion> RefreshAsync(WaypointDb db, PlanVersion v, CancellationToken ct)
     {

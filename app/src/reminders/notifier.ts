@@ -22,11 +22,9 @@ export interface Notifier {
 }
 
 /** Re-arms from the cache: drops what was armed and arms the next moments, so a changed Action is never stale. */
-export async function arm(notifier: Notifier, groups: ReminderGroup[], followUps: ArmedReminder[] = []) {
+export async function arm(notifier: Notifier, groups: ReminderGroup[]) {
   await notifier.cancelAll();
   for (const g of groups)
     for (const r of g.reminders)
       await notifier.schedule({ groupKey: g.key, at: r.at, title: r.title, body: r.text, data: { actionId: r.actionId } });
-  // At most one per Action, with the same buttons: it is armed like a reminder, at the Slot's end.
-  for (const f of followUps) await notifier.schedule(f);
 }

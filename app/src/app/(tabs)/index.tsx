@@ -4,6 +4,10 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet } from 'react-native-unistyles';
 import { useUnfinishedInterview } from '../../interview/useInterview';
+import { remindersLookDead } from '../../pause/battery';
+import { todayPausedLine } from '../../pause/pause';
+import { usePauses } from '../../pause/usePauses';
+import { openBatterySettings } from '../../push/native';
 import { usePlanBanners, usePlanSummaries } from '../../plan/usePlan';
 import { ActionSheet } from '../../today/ActionSheet';
 import { AspirationChips, NowCard, NowLine, TimelineRow, WaitingPill } from '../../today/TodayParts';
@@ -22,6 +26,10 @@ export default function TodayScreen() {
   const { drafting, late, retryDraft, waitingVersionId } = usePlanBanners();
   const { plans } = usePlanSummaries();
   const { actions, slots, loaded, task, undo, failed, move } = useToday();
+  const paused = usePauses(plans);
+  const pausedLine = todayPausedLine(paused.state, plans);
+  const { battery } = useLocalSearchParams<{ battery?: string }>();
+  const batteryHelp = battery === '1' || remindersLookDead(actions);
   const [sheet, setSheet] = useState<{ action: ScheduledActionView; choice?: CheckInState } | null>(null);
 
   // A reminder tap lands here with that Action's sheet open.
@@ -61,6 +69,23 @@ export default function TodayScreen() {
           </View>
         ) : null}
         {unfinished || waitingVersionId ? pills : null}
+
+        {batteryHelp ? (
+          <View style={styles.late}>
+            <Banner message={t('battery.banner')} />
+            <Button kind="secondary" title={t('battery.open')} onPress={() => void openBatterySettings()} />
+          </View>
+        ) : null}
+
+        {pausedLine?.kind === 'everything' ? (
+          <Card style={styles.dashed}>
+            <Text variant="heading">
+              {t(pausedLine.byCoach ? 'pause.byCoach' : pausedLine.until ? 'pause.everythingUntil' : 'pause.everythingOpen', { date: pausedLine.until ?? '' })}
+            </Text>
+            <Button title={t('pause.resumeNow')} onPress={() => void paused.resume(pausedLine.pauseId)} />
+          </Card>
+        ) : null}
+        {pausedLine?.kind === 'aspirations' ? <Text muted>{t('pause.aspirationsLine', { names: pausedLine.names.join(', ') })}</Text> : null}
 
         {today.state === 'none' ? (
           <>
@@ -154,6 +179,7 @@ export default function TodayScreen() {
         slots={slots}
         now={now}
         onMove={(date, slotId) => move(sheet!.action.id, date, slotId)}
+        onPause={async (scope, until) => void (await paused.start(scope, until))}
       />
     </View>
   );
@@ -165,6 +191,7 @@ const styles = StyleSheet.create((theme) => ({
   late: { gap: theme.space.sm },
   header: { gap: theme.space.sm },
   pills: { flexDirection: 'row', gap: theme.space.sm },
+  dashed: { borderStyle: 'dashed', gap: theme.space.md },
   timeline: { gap: theme.space.sm },
   undo: {
     position: 'absolute',

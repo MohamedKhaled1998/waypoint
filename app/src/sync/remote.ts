@@ -41,6 +41,10 @@ export function httpRemote(auth: Auth): Remote {
           return outcome(await call(`/scheduled-actions/${p(item).scheduledActionId}/check-in`, 'DELETE'));
         case 'move_action':
           return outcome(await call(`/scheduled-actions/${p(item).scheduledActionId}/move`, 'PUT', { clientId: item.clientId, date: p(item).date, slotId: p(item).slotId }));
+        case 'pause':
+          return outcome(await call('/pauses', 'POST', { ...item.payload, clientId: item.clientId }));
+        case 'resume':
+          return outcome(await call(`/pauses/by-client/${encodeURIComponent(p(item).pauseClientId)}/resume`, 'POST'));
         case 'approve_plan':
           return outcome(await call(`/plan-versions/${p(item).versionId}/approve`, 'POST'));
         case 'message': {

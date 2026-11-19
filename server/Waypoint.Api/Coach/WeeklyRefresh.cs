@@ -17,8 +17,7 @@ public static class RefreshPrompt
         Aspiration's short name, whether the last two weeks were mostly done, and "changes": a list of codes the app
         made (empty when nothing changed). Never change, add or question a decision, and never invent numbers.
 
-        Voice: warm, plain, brief, forgiving, second person, no emojis, no guilt, no streaks. When a change is about a
-        skip, give one line of acknowledgement and one next step, and never use the words "missed", "failed" or "streak".
+        Voice: warm, plain, brief, forgiving, second person, no emojis, no guilt, no streaks.
 
         Reply with exactly one fenced json block and nothing else:
 
@@ -39,11 +38,6 @@ public static class WeeklyRefreshes
     /// <summary>A week is mostly done at 80% of its planned minutes.</summary>
     public const double MostlyDone = 0.8;
     public const int MinutesStep = 5;
-    /// <summary>Easing back never shortens a session below this.</summary>
-    public const int MinSessionMinutes = 15;
-    /// <summary>Catch-up spreads over at most this many weeks, and adds at most this share on top of the Aspiration's share.</summary>
-    public const int CatchUpWeeks = 3;
-    public const double CatchUpOverShare = 0.2;
     public const string Reason = "weekly_refresh";
 
     /// <summary>The first run of the user's day and time strictly after <paramref name="notBefore"/>.</summary>
@@ -81,46 +75,18 @@ public static class WeeklyRefreshes
                 ? Results.Ok(await ViewAsync(db, r, ct)) : Results.NotFound());
 
         // "Looks good": approves every proposal of the refresh.
-        g.MapPost("/{id:guid}/accept", async (Guid id, AcceptRequest? req, WaypointDb db, TimeProvider clock, JobQueue jobs, CancellationToken ct) =>
+        g.MapPost("/{id:guid}/accept", async (Guid id, WaypointDb db, TimeProvider clock, JobQueue jobs, CancellationToken ct) =>
         {
             var r = await db.WeeklyRefreshes.FirstOrDefaultAsync(x => x.Id == id && x.Status != RefreshStatus.Scheduled, ct);
             if (r is null) return Results.NotFound();
             if (r.Status == RefreshStatus.Open)
             {
-                if (req?.CatchUp == false) await ShiftDatesInsteadAsync(db, r, ct);
                 await ApproveAllAsync(db, clock, jobs, r, autoApplied: false, ct);
                 r.Status = RefreshStatus.Accepted;
                 await db.SaveChangesAsync(ct);
             }
             return Results.Ok(await ViewAsync(db, r, ct));
         });
-    }
-
-    public sealed record AcceptRequest(bool? CatchUp);
-
-    /// <summary>"Just shift the dates": the refresh's Catch-up Actions go, and what they covered waits as an offer to move dates.</summary>
-    private static async Task ShiftDatesInsteadAsync(WaypointDb db, WeeklyRefresh refresh, CancellationToken ct)
-    {
-        foreach (var v in await db.PlanVersions.Where(p => p.RefreshId == refresh.Id && p.Status == PlanVersionStatus.Proposed).ToListAsync(ct))
-        {
-            var window = JsonNode.Parse(v.TwoWeeksJson)!.AsArray();
-            foreach (var e in window.Where(e => e!["kind"]!.GetValue<string>() == "catch_up").ToList()) window.Remove(e);
-            v.TwoWeeksJson = window.ToJsonString();
-            if (v.ChangesJson is null || JsonNode.Parse(v.ChangesJson) is not JsonObject changes) continue;
-            var list = (JsonArray)changes["changes"]!;
-            var offers = (JsonArray)changes["offers"]!;
-            foreach (var c in list.Where(c => c!["code"]!.GetValue<string>() == "catch_up").ToList())
-            {
-                list.Remove(c);
-                offers.Add(new JsonObject
-                {
-                    ["code"] = "shift_dates", ["what"] = "milestones", ["title"] = c!["title"]!.GetValue<string>(), ["field"] = "offer",
-                    ["minutes"] = c["minutes"]!.GetValue<int>() + c["leftover"]!.GetValue<int>(), ["reason"] = c["reason"]!.GetValue<string>(),
-                });
-            }
-            v.ChangesJson = changes.ToJsonString();
-        }
-        await db.SaveChangesAsync(ct);
     }
 
     internal static async Task ApproveAllAsync(WaypointDb db, TimeProvider clock, JobQueue jobs, WeeklyRefresh refresh, bool autoApplied, CancellationToken ct)
@@ -140,9 +106,11 @@ public static class WeeklyRefreshes
         var opened = DateOnly.FromDateTime(r.OpenedAt ?? r.RunAt);
         var from = opened.AddDays(-6);
         var slots = await db.Slots.ToDictionaryAsync(s => s.Id, ct);
-        var unreported = await db.ScheduledActions.Where(a => a.Date >= from && a.Date <= opened
+        var pauses = await db.Pauses.ToListAsync(ct);
+        // Set-aside Actions count neither as done nor missed, so they are not asked about.
+        var unreported = (await db.ScheduledActions.Where(a => a.Date >= from && a.Date <= opened
                 && !db.CheckIns.Any(c => c.ScheduledActionId == a.Id))
-            .OrderBy(a => a.Date).ThenBy(a => a.Title).ToListAsync(ct);
+            .OrderBy(a => a.Date).ThenBy(a => a.Title).ToListAsync(ct)).Where(a => !Pauses.IsSetAside(pauses, a, false)).ToList();
         var proposals = await db.PlanVersions.Where(p => p.RefreshId == r.Id).OrderBy(p => p.CreatedAt).ToListAsync(ct);
         var names = await db.Aspirations.ToDictionaryAsync(a => a.Id, ct);
         // Property order is the order the phone shows them: the "did it" list comes first.
@@ -175,7 +143,10 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ICoachMode
         var aspirations = (await db.Aspirations.Where(a => a.Status == "active").ToListAsync(ct))
             .OrderBy(a => a.SettleForDate ?? DateOnly.MaxValue).ThenBy(a => a.CreatedAt).ToList(); // the one closest to slipping gets the contested Slot
         var currents = await db.PlanVersions.Where(p => p.Status == PlanVersionStatus.Approved).ToListAsync(ct);
-        var planned = aspirations.Where(a => currents.Any(p => p.AspirationId == a.Id)).ToList();
+        var pauses = await db.Pauses.ToListAsync(ct);
+        // An Aspiration paused right now is left alone: nothing to propose until the user is back.
+        var planned = aspirations.Where(a => currents.Any(p => p.AspirationId == a.Id)
+            && !pauses.Any(p => Pauses.IsActive(p, now) && Pauses.CoversAspiration(p, a.Id))).ToList();
 
         // Minutes already taken in each Slot on each day, by what the refresh keeps: other Aspirations and Check-ins already made.
         var plannedIds = planned.Select(a => a.Id).ToHashSet();
@@ -185,7 +156,10 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ICoachMode
 
         var made = new List<PlanVersion>();
         foreach (var aspiration in planned)
-            made.Add(await ProposeAsync(aspiration, currents.First(p => p.AspirationId == aspiration.Id), slots, used, start, now, refresh.Id, ct));
+            made.Add(await ProposeAsync(aspiration, currents.First(p => p.AspirationId == aspiration.Id), slots, used, start, now, refresh.Id, pauses, ct));
+
+        // Eased once every Aspiration under a shared Pause has been proposed, so none of them misses the easier week.
+        foreach (var p in pauses.Where(p => planned.Any(a => IsFirstWeekBack(p, a.Id, now)))) p.EasedAt = now;
 
         refresh.Status = RefreshStatus.Open;
         refresh.OpenedAt = now;
@@ -198,12 +172,16 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ICoachMode
         log.LogInformation("Weekly refresh {RefreshId} proposed {Count} versions", refresh.Id, made.Count);
     }
 
+    private static bool IsFirstWeekBack(Pause p, Guid aspirationId, DateTime now) =>
+        p.EasedAt is null && p.ScheduledActionId is null && Pauses.CoversAspiration(p, aspirationId)
+        && Pauses.EffectiveEnd(p) is { } end && end <= now && Pauses.Days(p, now) >= Pauses.WelcomeMinDays;
+
     private async Task<PlanVersion> ProposeAsync(Aspiration aspiration, PlanVersion current, Dictionary<Guid, Slot> slots,
-        Dictionary<(DateOnly, Guid), int> used, DateOnly start, DateTime now, Guid refreshId, CancellationToken ct)
+        Dictionary<(DateOnly, Guid), int> used, DateOnly start, DateTime now, Guid refreshId, List<Pause> pauses, CancellationToken ct)
     {
         // Mostly done: both of the last two weeks reached 80% of their planned minutes.
-        var weekOf = async (int back) => await MostlyDoneAsync(aspiration.Id, start.AddDays(-7 * back), start.AddDays(-7 * (back - 1)), ct);
-        bool[] mostly = [await weekOf(1), await weekOf(2)];
+        var weekOf = async (int back, List<Pause> ps) => await MostlyDoneAsync(aspiration.Id, start.AddDays(-7 * back), start.AddDays(-7 * (back - 1)), ps, ct);
+        bool[] mostly = [await weekOf(1, pauses), await weekOf(2, pauses)];
 
         var oldMilestones = await db.Milestones.Where(m => m.PlanVersionId == current.Id).OrderBy(m => m.Date).ToListAsync(ct);
         var oldHabits = await db.Habits.Where(h => h.PlanVersionId == current.Id).OrderBy(h => h.Title).ToListAsync(ct);
@@ -211,29 +189,18 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ICoachMode
         var habits = oldHabits.Select(h => new H(h.Id, h.Title, h.TimesPerWeek, h.Minutes,
             h.SlotIds.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(Guid.Parse).ToList())).ToList();
 
-        var full = aspiration.ShareHoursPerWeek * 60;
-        var changes = new List<JsonObject>();
-        var band = Tolerance.Measure([await ToleranceWeekAsync(aspiration.Id, start.AddDays(-14), start.AddDays(-7), start, ct),
-            await ToleranceWeekAsync(aspiration.Id, start.AddDays(-7), start, start, ct)]);
-
-        // Three Partly in a row on one habit: a shorter version, so the Action fits.
-        var offers = new List<JsonObject>();
-        var shortened = new HashSet<string>();
-        for (var i = 0; i < habits.Count; i++)
-            if (await ShorterAsync(aspiration.Id, habits[i], start, ct) is { } shorter)
-            {
-                changes.Add(Change("shorter_version", habits[i].Title, "minutes", habits[i].Minutes, shorter));
-                shortened.Add(habits[i].Title);
-                habits[i] = habits[i] with { Minutes = shorter };
-            }
-
-        // Ease back: one notch down, the mirror of the ramp. A Re-think leaves the Plan alone and opens a conversation instead.
-        if (band == Tolerance.Band.EaseBack && StepDown(habits, shortened) is { } down) changes.Add(down);
-        if (band == Tolerance.Band.Rethink)
-            jobs.Add(JobKinds.Rethink, aspiration.UserId, new Dictionary<string, Guid> { ["aspirationId"] = aspiration.Id }, aspiration.Id);
+        // First week back from a Pause: one notch lower instead of any ramp; a Catch-up starts in week two.
+        var returned = pauses.Where(p => IsFirstWeekBack(p, aspiration.Id, now)).ToList();
 
         // Ramp: one notch while both weeks were mostly done, stopping at the full share.
-        if (mostly.All(m => m) && shortened.Count == 0)
+        var full = aspiration.ShareHoursPerWeek * 60;
+        var changes = new List<JsonObject>();
+        if (returned.Count > 0)
+        {
+            var step = EaseOne(habits);
+            if (step is not null) changes.Add(step);
+        }
+        else if (mostly.All(m => m))
         {
             var weekly = habits.Sum(h => h.Times * h.Minutes);
             var step = RampOne(habits, slots, full, weekly);
@@ -291,96 +258,22 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ICoachMode
                 }
             }
 
-        // Tasks join the window when it reaches them; one already given a day before the window is left to its Check-in,
-        // unless it was missed: then it moves to the next free Slot, and slipping twice offers to split it.
+        // Tasks join the window when it reaches them; one already given a day before the window is left to its Check-in.
         var windowEnd = start.AddDays(13);
-        var givenBefore = await db.ScheduledActions.Where(a => a.AspirationId == aspiration.Id && a.TaskId != null && a.Date < start)
-            .Select(a => new { a.Title, a.Date, State = db.CheckIns.Where(c => c.ScheduledActionId == a.Id).Select(c => c.State).FirstOrDefault() })
-            .ToListAsync(ct);
-        // Unreported only counts as a miss once the "did it" list has passed.
-        bool Missed(DateOnly date, string? state) => state == CheckInState.Skipped || (state is null && date < start.AddDays(-7));
+        var scheduledBefore = (await db.ScheduledActions.Where(a => a.AspirationId == aspiration.Id && a.TaskId != null && a.Date < start)
+            .Select(a => a.Title).ToListAsync(ct)).ToHashSet();
         var taskRows = new List<PlanTask>();
         foreach (var t in oldTasks)
         {
             var copy = new PlanTask { Id = Guid.NewGuid(), UserId = t.UserId, PlanVersionId = version.Id, MilestoneId = milestoneIds[t.MilestoneId], Title = t.Title, Minutes = t.Minutes, DueDate = t.DueDate };
             taskRows.Add(copy);
-            var given = givenBefore.Where(g => g.Title == t.Title).OrderBy(g => g.Date).ToList();
-            var slips = given.Count(g => Missed(g.Date, g.State));
-            var latestMissed = given.Count > 0 && Missed(given[^1].Date, given[^1].State);
-            if ((given.Count > 0 && !latestMissed) || (t.DueDate is { } d && d > windowEnd)) continue;
+            if (scheduledBefore.Contains(t.Title) || (t.DueDate is { } d && d > windowEnd)) continue;
             if (PlaceTask(t, slots, used, start, windowEnd) is { } at)
             {
                 used[(at.Date, at.Slot.Id)] = used.GetValueOrDefault((at.Date, at.Slot.Id)) + t.Minutes;
                 window.Add(Entry(at.Date, at.Slot, t.Title, "task", t.Minutes, null, copy.Id, null));
-                if (latestMissed)
-                {
-                    changes.Add(new JsonObject
-                    {
-                        ["code"] = "task_moved", ["what"] = "task", ["title"] = t.Title, ["field"] = "date",
-                        ["before"] = given[^1].Date.ToString("yyyy-MM-dd"), ["after"] = at.Date.ToString("yyyy-MM-dd"),
-                    });
-                    if (slips >= 2) offers.Add(new JsonObject { ["code"] = "split_task", ["what"] = "task", ["title"] = t.Title, ["field"] = "offer" });
-                }
             }
         }
-
-        // Shortfall of the week just ended (habit minutes skipped or cut short; tasks move instead). Catch-up only while
-        // absorbing; while easing back or re-thinking the shortfall moves dates instead, as a proposal.
-        var shortfalls = (await db.ScheduledActions.Where(a => a.AspirationId == aspiration.Id && a.HabitId != null && a.Date >= start.AddDays(-7) && a.Date < start)
-                .Select(a => new { a.Title, a.Minutes, Check = db.CheckIns.Where(c => c.ScheduledActionId == a.Id).Select(c => new { c.State, c.MinutesSpent }).FirstOrDefault() })
-                .ToListAsync(ct))
-            .Where(a => a.Check is not null)
-            .GroupBy(a => a.Title)
-            .ToDictionary(g => g.Key, g => g.Sum(a => a.Check!.State switch
-            {
-                CheckInState.Skipped => a.Minutes,
-                CheckInState.Partly => Math.Max(0, a.Minutes - (a.Check.MinutesSpent ?? 0)),
-                _ => 0,
-            }));
-        var shortfall = shortfalls.Values.Sum();
-        if (shortfall > 0 && band == Tolerance.Band.Absorb)
-        {
-            var weekMinutes = Enumerable.Range(0, WeeklyRefreshes.CatchUpWeeks).Select(w => window.Sum(e =>
-                PlanRules.ParseDate(e!["date"]!.GetValue<string>()) is { } d && d >= start.AddDays(7 * w) && d < start.AddDays(7 * w + 7) ? e["minutes"]!.GetValue<int>() : 0)).ToArray();
-            var left = shortfall;
-            foreach (var (h, row) in habitRows.Where(r => shortfalls.GetValueOrDefault(r.H.Title) > 0))
-            {
-                var mine = Math.Min(left, shortfalls[h.Title]);
-                var placed = 0;
-                // The window holds two weeks of concrete Actions, so Catch-up spreads over those, never over the ~3-week limit.
-                for (var w = 0; w < 2 && mine - placed > 0; w++)
-                {
-                    var weekCap = (int)Math.Floor(full * (1 + WeeklyRefreshes.CatchUpOverShare)) - weekMinutes[w];
-                    var target = Math.Min(weekCap, (int)Math.Ceiling((mine - placed) / (double)(2 - w)));
-                    for (var d = 0; d < 7 && target > 0 && mine - placed > 0; d++)
-                    {
-                        var date = start.AddDays(7 * w + d);
-                        foreach (var slot in h.SlotIds.Where(slots.ContainsKey).Select(id => slots[id]).Where(sl => sl.Days.Split(',').Contains(PlanRules.Day(date))))
-                        {
-                            var amount = Math.Min(Math.Min(target, mine - placed), (int)PlanRules.Room(slot) - used.GetValueOrDefault((date, slot.Id)));
-                            if (amount < WeeklyRefreshes.MinutesStep) continue;
-                            used[(date, slot.Id)] = used.GetValueOrDefault((date, slot.Id)) + amount;
-                            window.Add(Entry(date, slot, $"{h.Title} (catch-up)", "catch_up", amount, null, null, lastReminder.GetValueOrDefault(h.Title)));
-                            weekMinutes[w] += amount;
-                            target -= amount;
-                            placed += amount;
-                            break; // one catch-up a day
-                        }
-                    }
-                }
-                if (placed > 0)
-                    changes.Add(new JsonObject
-                    {
-                        ["code"] = "catch_up", ["what"] = "habit", ["title"] = h.Title, ["field"] = "minutes", ["minutes"] = placed,
-                        ["leftover"] = shortfalls[h.Title] - placed, ["alternative"] = "shift_dates",
-                    });
-                left -= shortfalls[h.Title];
-            }
-            var unplaced = shortfall - changes.Where(c => c["code"]!.GetValue<string>() == "catch_up").Sum(c => c["minutes"]!.GetValue<int>());
-            if (unplaced > 0) offers.Add(new JsonObject { ["code"] = "shift_dates", ["what"] = "milestones", ["title"] = aspiration.ShortName, ["field"] = "offer", ["minutes"] = unplaced });
-        }
-        else if (shortfall > 0)
-            offers.Add(new JsonObject { ["code"] = "shift_dates", ["what"] = "milestones", ["title"] = aspiration.ShortName, ["field"] = "offer", ["minutes"] = shortfall });
         version.TwoWeeksJson = window.ToJsonString();
 
         // Words: the model phrases what the app decided.
@@ -388,17 +281,17 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ICoachMode
         {
             ["aspiration"] = aspiration.ShortName,
             ["last_two_weeks_mostly_done"] = new JsonArray(mostly.Select(m => (JsonNode)m).ToArray()),
-            ["tolerance"] = band.ToString(),
+            ["first_week_back"] = returned.Count > 0,
+            ["return_choice"] = returned.Select(p => p.ReturnChoice).FirstOrDefault(c => c is not null),
             ["at_full_share"] = habits.Sum(h => h.Times * h.Minutes) >= full,
-            ["changes"] = new JsonArray(changes.Concat(offers).Select(c => (JsonNode)new JsonObject { ["code"] = c["code"]!.GetValue<string>(), ["what"] = c["title"]!.GetValue<string>(), ["field"] = c["field"]!.GetValue<string>() }).ToArray()),
+            ["changes"] = new JsonArray(changes.Select(c => (JsonNode)new JsonObject { ["code"] = c["code"]!.GetValue<string>(), ["what"] = c["title"]!.GetValue<string>(), ["field"] = c["field"]!.GetValue<string>() }).ToArray()),
         };
-        var (rationale, reasons) = await PhraseAsync(brief, changes.Concat(offers).Select(c => c["code"]!.GetValue<string>()).Distinct().ToList(), ct);
+        var (rationale, reasons) = await PhraseAsync(brief, changes.Select(c => c["code"]!.GetValue<string>()).ToList(), ct);
         version.Rationale = rationale;
-        foreach (var c in changes.Concat(offers)) c["reason"] = reasons[c["code"]!.GetValue<string>()];
+        foreach (var c in changes) c["reason"] = reasons[c["code"]!.GetValue<string>()];
         version.ChangesJson = new JsonObject
         {
             ["changes"] = new JsonArray(changes.ToArray<JsonNode?>()),
-            ["offers"] = new JsonArray(offers.ToArray<JsonNode?>()),
             ["stays"] = new JsonArray(
                 oldMilestones.Select(m => (JsonNode)new JsonObject { ["what"] = "milestone", ["title"] = m.Title, ["date"] = m.Date.ToString("yyyy-MM-dd") })
                     .Concat(habits.Where(h => !changes.Any(c => c["title"]!.GetValue<string>() == h.Title))
@@ -415,58 +308,13 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ICoachMode
         return version;
     }
 
-    /// <summary>
-    /// Done and partly Actions against Actions counted in [from, to). Unreported ones in the week that just ended are
-    /// still on the "did it" list, so they are left out; older unreported ones count as not done.
-    /// </summary>
-    private async Task<(int Done, int Total)> ToleranceWeekAsync(Guid aspirationId, DateOnly from, DateOnly to, DateOnly refreshStart, CancellationToken ct)
-    {
-        var rows = await db.ScheduledActions.Where(a => a.AspirationId == aspirationId && a.Date >= from && a.Date < to)
-            .Select(a => new { a.Date, State = db.CheckIns.Where(c => c.ScheduledActionId == a.Id).Select(c => c.State).FirstOrDefault() })
-            .ToListAsync(ct);
-        var counted = rows.Where(r => r.State is not null || r.Date < refreshStart.AddDays(-7)).ToList();
-        return (counted.Count(r => r.State is CheckInState.Done or CheckInState.Partly), counted.Count);
-    }
-
-    /// <summary>One notch down, mirroring <see cref="RampOne"/>: a few minutes off a session, else one session fewer. Null when nothing can step down.</summary>
-    private static JsonObject? StepDown(List<H> habits, HashSet<string> skip)
-    {
-        for (var i = 0; i < habits.Count; i++)
-        {
-            var h = habits[i];
-            if (skip.Contains(h.Title) || h.Minutes - WeeklyRefreshes.MinutesStep < WeeklyRefreshes.MinSessionMinutes) continue;
-            habits[i] = h with { Minutes = h.Minutes - WeeklyRefreshes.MinutesStep };
-            return Change("ease_back", h.Title, "minutes", h.Minutes, h.Minutes - WeeklyRefreshes.MinutesStep);
-        }
-        for (var i = 0; i < habits.Count; i++)
-        {
-            var h = habits[i];
-            if (skip.Contains(h.Title) || h.Times <= 1) continue;
-            habits[i] = h with { Times = h.Times - 1 };
-            return Change("ease_back", h.Title, "times_per_week", h.Times, h.Times - 1);
-        }
-        return null;
-    }
-
-    /// <summary>The shorter session to offer when the habit's last three sessions were all Partly; null otherwise.</summary>
-    private async Task<int?> ShorterAsync(Guid aspirationId, H habit, DateOnly start, CancellationToken ct)
-    {
-        var lastThree = await db.ScheduledActions.Where(a => a.AspirationId == aspirationId && a.HabitId != null && a.Title == habit.Title && a.Date < start)
-            .OrderByDescending(a => a.Date)
-            .Select(a => db.CheckIns.Where(c => c.ScheduledActionId == a.Id).Select(c => new { c.State, c.MinutesSpent }).FirstOrDefault())
-            .Take(3).ToListAsync(ct);
-        if (lastThree.Count < 3 || lastThree.Any(c => c?.State != CheckInState.Partly)) return null;
-        var average = lastThree.Average(c => c!.MinutesSpent ?? 0);
-        var rounded = (int)Math.Round(average / WeeklyRefreshes.MinutesStep) * WeeklyRefreshes.MinutesStep;
-        var shorter = Math.Min(habit.Minutes - WeeklyRefreshes.MinutesStep, Math.Max(WeeklyRefreshes.MinSessionMinutes, rounded));
-        return shorter >= WeeklyRefreshes.MinSessionMinutes && shorter < habit.Minutes ? shorter : null;
-    }
-
-    private async Task<bool> MostlyDoneAsync(Guid aspirationId, DateOnly from, DateOnly toExclusive, CancellationToken ct)
+    private async Task<bool> MostlyDoneAsync(Guid aspirationId, DateOnly from, DateOnly toExclusive, List<Pause> pauses, CancellationToken ct)
     {
         var rows = await db.ScheduledActions.Where(a => a.AspirationId == aspirationId && a.Date >= from && a.Date < toExclusive)
-            .Select(a => new { a.Minutes, Check = db.CheckIns.Where(c => c.ScheduledActionId == a.Id).Select(c => new { c.State, c.MinutesSpent }).FirstOrDefault() })
+            .Select(a => new { Action = a, a.Minutes, Check = db.CheckIns.Where(c => c.ScheduledActionId == a.Id).Select(c => new { c.State, c.MinutesSpent }).FirstOrDefault() })
             .ToListAsync(ct);
+        // Set-aside Actions are excluded from both sides.
+        rows = rows.Where(r => !Pauses.IsSetAside(pauses, r.Action, r.Check is not null)).ToList();
         var plannedMinutes = rows.Sum(r => r.Minutes);
         if (plannedMinutes == 0) return false; // nothing planned: no evidence of keeping up
         var done = rows.Sum(r => r.Check?.State switch
@@ -497,6 +345,27 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ICoachMode
             if (more < 1) continue;
             habits[i] = h with { Minutes = h.Minutes + more };
             return Change("ramp_minutes", h.Title, "minutes", h.Minutes, h.Minutes + more);
+        }
+        return null;
+    }
+
+    /// <summary>One notch down for the first week back: one session fewer on a habit that meets more than once, else a few minutes shorter.</summary>
+    private static JsonObject? EaseOne(List<H> habits)
+    {
+        for (var i = 0; i < habits.Count; i++)
+        {
+            var h = habits[i];
+            if (h.Times <= 1) continue;
+            habits[i] = h with { Times = h.Times - 1 };
+            return Change("ease_back_return", h.Title, "times_per_week", h.Times, h.Times - 1);
+        }
+        for (var i = 0; i < habits.Count; i++)
+        {
+            var h = habits[i];
+            var less = Math.Min(WeeklyRefreshes.MinutesStep, h.Minutes - 10);
+            if (less < 1) continue;
+            habits[i] = h with { Minutes = h.Minutes - less };
+            return Change("ease_back_return", h.Title, "minutes", h.Minutes, h.Minutes - less);
         }
         return null;
     }
@@ -552,7 +421,6 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ICoachMode
         // Late, never faked: a reply without words for every change fails the job, which retries.
         if (string.IsNullOrWhiteSpace(rationale) || codes.Any(c => !reasons.TryGetValue(c, out var r) || string.IsNullOrWhiteSpace(r)))
             throw new CoachUnavailableException("refresh_reply_invalid");
-        if (MissTone.Violates(rationale) || reasons.Values.Any(MissTone.Violates)) throw new CoachUnavailableException("reply_tone");
         return (rationale, reasons);
     }
 }

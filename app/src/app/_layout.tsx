@@ -5,12 +5,13 @@ import * as Notifications from 'expo-notifications';
 import { useEffect, useRef } from 'react';
 import '../reminders/task';
 import { setUpReminders } from '../reminders/native';
-import { noteInteraction, rearmReminders } from '../reminders/rearm';
+import { rearmReminders } from '../reminders/rearm';
 import { registerReminderTask } from '../reminders/task';
 import { StatusBar } from 'expo-status-bar';
 import { useTranslation } from 'react-i18next';
 import { useUnistyles } from 'react-native-unistyles';
 import { phonePush, setUpPushChannel } from '../push/native';
+import { batteryHintFor } from '../pause/battery';
 import { registerPushToken, routeForPush } from '../push/push';
 import { SessionProvider, useSession } from '../auth/SessionProvider';
 import { View } from 'react-native';
@@ -22,7 +23,6 @@ function Routes() {
   // Arm the next reminders on app start, whenever the cache changes (a pull, a Check-in) and whenever one fires.
   useEffect(() => {
     if (status !== 'signedIn') return;
-    noteInteraction(); // opening the app counts
     const rearm = () => void rearmReminders().catch(() => console.warn('reminders: arming failed'));
     void setUpReminders().then(registerReminderTask).then(rearm).catch(() => console.warn('reminders: arming failed'));
     const unsubscribe = phone.subscribe(rearm);
@@ -53,6 +53,11 @@ function Routes() {
     handled.current = id;
     const data = lastResponse.notification.request.content.data as { actionId?: string } | null;
     // A push carries a route; a reminder carries its Action.
+    // The second silence nudge hints at the battery setting: Today offers it.
+    if (batteryHintFor(data)) {
+      router.navigate({ pathname: '/', params: { battery: '1' } });
+      return;
+    }
     const pushRoute = routeForPush(data);
     if (pushRoute) {
       router.navigate(pushRoute);
@@ -77,6 +82,7 @@ function Routes() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="interview" options={{ title: t('interview.title') }} />
         <Stack.Screen name="plan-review" options={{ title: t('plan.title') }} />
+        <Stack.Screen name="aspiration" options={{ title: '' }} />
         <Stack.Screen name="settings" options={{ title: t('settings.title') }} />
       </Stack.Protected>
       <Stack.Protected guard={status === 'signedOut'}>
