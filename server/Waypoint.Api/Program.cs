@@ -32,6 +32,7 @@ builder.Services.AddScoped<PushNotifier>();
 builder.Services.AddScoped<CoachMessenger>();
 
 builder.Services.AddScoped<JobQueue>();
+builder.Services.AddScoped<ProgressCalculator>();
 builder.Services.AddScoped<PlanDrafter>();
 builder.Services.AddScoped<ReminderWriter>();
 builder.Services.AddScoped<WeeklyRefreshRunner>();
@@ -114,6 +115,7 @@ app.MapCoachChat();
 app.MapInterviews();
 app.MapPlans();
 app.MapWeeklyRefreshes();
+app.MapProgress();
 app.MapCheckIns();
 app.MapSync();
 app.MapPushes();

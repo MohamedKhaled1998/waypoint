@@ -22,6 +22,56 @@ namespace Waypoint.Api.Data.Migrations
 
             MySqlModelBuilderExtensions.AutoIncrementColumns(modelBuilder);
 
+            modelBuilder.Entity("Waypoint.Api.Coach.ProgressReading", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid>("AspirationId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime>("At")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<bool>("LateEarly")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<bool>("MiddleOver")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<double?>("Pace")
+                        .HasColumnType("double");
+
+                    b.Property<bool>("PastSettleFor")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<Guid?>("PlanVersionId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid>("RefreshId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<bool>("Spoke")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("varchar(16)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("char(36)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AspirationId");
+
+                    b.HasIndex("UserId", "AspirationId", "At");
+
+                    b.ToTable("ProgressReadings");
+                });
+
             modelBuilder.Entity("Waypoint.Api.Data.Aspiration", b =>
                 {
                     b.Property<Guid>("Id")
@@ -770,6 +820,21 @@ namespace Waypoint.Api.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("DeviceTokens");
+                });
+
+            modelBuilder.Entity("Waypoint.Api.Coach.ProgressReading", b =>
+                {
+                    b.HasOne("Waypoint.Api.Data.Aspiration", null)
+                        .WithMany()
+                        .HasForeignKey("AspirationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Waypoint.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Waypoint.Api.Data.Aspiration", b =>

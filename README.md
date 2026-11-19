@@ -12,8 +12,6 @@ Needs Docker. Create `.env` next to `docker-compose.yml` (never commit it):
 | `MYSQL_ROOT_PASSWORD` | MySQL root password |
 | `JWT_KEY` | Random string of 32+ characters that signs access tokens |
 | `GOOGLE_WEB_CLIENT_ID` | Google OAuth **Web** client ID the ID tokens are issued for |
-| `BACKUP_PASSPHRASE` | Encrypts the nightly dumps; keep a copy off this machine |
-| `BACKUP_DIR` | Host path on off-machine storage that receives the dumps (30-day retention) |
 | `Firebase__ServiceAccountFile` | Path of the Firebase service-account JSON the API sends pushes with. Compose sets it to `/run/secrets/firebase-service-account.json` and mounts `./secrets` there read-only; put the file at `secrets/firebase-service-account.json` (gitignored). The API refuses to start without a readable file |
 
 ```
@@ -24,10 +22,6 @@ The API listens on port 8080 and applies EF Core migrations on start. Locally, f
 `ConnectionStrings__Waypoint`, `Jwt__Key`, `Google__ClientIds__0` and `Firebase__ServiceAccountFile` (or use `dotnet user-secrets`).
 
 Reach it from the phone over Tailscale: install Tailscale on the PC and the phone, then use `http://<pc-tailnet-name>:8080`.
-
-## Operations
-
-Backups and the restore drill: `docs/ops/backup-and-restore.md`. Moving to a VPS: `docs/ops/stage-2-vps.md`.
 
 ## Server tests
 

@@ -17,12 +17,18 @@ public static class RefreshPrompt
         Aspiration's short name, whether the last two weeks were mostly done, and "changes": a list of codes the app
         made (empty when nothing changed). Never change, add or question a decision, and never invent numbers.
 
+        When the JSON has "progress", the app has judged where the user stands: "state" (too_early, on_track, slipping,
+        ahead, past_settle_for), "previous_state", "pace" in words and the projected window in words. Add "standing": ONE
+        short sentence in the Coach's voice, saying the state change ("say": "state_change") or where they stand
+        ("say": "where_you_stand"). Speak of effort and time, never percentages or odds, and never of the outcome itself.
+        Never decide a state or a date yourself; say only what "progress" holds.
+
         Voice: warm, plain, brief, forgiving, second person, no emojis, no guilt, no streaks.
 
         Reply with exactly one fenced json block and nothing else:
 
         ```json
-        { "rationale": "two or three sentences on next week and why", "reasons": { "<change code>": "one short sentence" } }
+        { "rationale": "two or three sentences on next week and why", "reasons": { "<change code>": "one short sentence" }, "standing": "only when progress is given" }
         ```
         Give a reason for every code in "changes".
         """;
@@ -125,7 +131,7 @@ public static class WeeklyRefreshes
 }
 
 /// <summary>The refresh job: measures, ramps, lays out the next two weeks and stores one proposal per Aspiration.</summary>
-public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ICoachModelClient model, IOptions<CoachOptions> options, TimeProvider clock,
+public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ProgressCalculator progress, ICoachModelClient model, IOptions<CoachOptions> options, TimeProvider clock,
     ILogger<WeeklyRefreshRunner> log)
 {
     private sealed record H(Guid OldId, string Title, int Times, int Minutes, List<Guid> SlotIds);
@@ -151,7 +157,10 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ICoachMode
 
         var made = new List<PlanVersion>();
         foreach (var aspiration in planned)
-            made.Add(await ProposeAsync(aspiration, currents.First(p => p.AspirationId == aspiration.Id), slots, used, start, now, refresh.Id, ct));
+        {
+            var note = await JudgeAsync(aspiration, start, now, refresh.Id, ct);
+            made.Add(await ProposeAsync(aspiration, currents.First(p => p.AspirationId == aspiration.Id), slots, used, start, now, refresh.Id, note, ct));
+        }
 
         refresh.Status = RefreshStatus.Open;
         refresh.OpenedAt = now;
@@ -165,7 +174,7 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ICoachMode
     }
 
     private async Task<PlanVersion> ProposeAsync(Aspiration aspiration, PlanVersion current, Dictionary<Guid, Slot> slots,
-        Dictionary<(DateOnly, Guid), int> used, DateOnly start, DateTime now, Guid refreshId, CancellationToken ct)
+        Dictionary<(DateOnly, Guid), int> used, DateOnly start, DateTime now, Guid refreshId, ProgressNote note, CancellationToken ct)
     {
         // Mostly done: both of the last two weeks reached 80% of their planned minutes.
         var weekOf = async (int back) => await MostlyDoneAsync(aspiration.Id, start.AddDays(-7 * back), start.AddDays(-7 * (back - 1)), ct);
@@ -264,8 +273,14 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ICoachMode
             ["at_full_share"] = habits.Sum(h => h.Times * h.Minutes) >= full,
             ["changes"] = new JsonArray(changes.Select(c => (JsonNode)new JsonObject { ["code"] = c["code"]!.GetValue<string>(), ["what"] = c["title"]!.GetValue<string>(), ["field"] = c["field"]!.GetValue<string>() }).ToArray()),
         };
-        var (rationale, reasons) = await PhraseAsync(brief, changes.Select(c => c["code"]!.GetValue<string>()).ToList(), ct);
+        if (note.Say) brief["progress"] = note.Brief;
+        var (rationale, reasons, standing) = await PhraseAsync(brief, changes.Select(c => c["code"]!.GetValue<string>()).ToList(), note.Say, ct);
         version.Rationale = rationale;
+        if (note.Say)
+            db.ChatMessages.Add(new ChatMessage
+            {
+                Id = Guid.NewGuid(), UserId = aspiration.UserId, Role = "coach", Text = standing!, AspirationId = aspiration.Id, CreatedAt = now,
+            });
         foreach (var c in changes) c["reason"] = reasons[c["code"]!.GetValue<string>()];
         version.ChangesJson = new JsonObject
         {
@@ -285,6 +300,45 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ICoachMode
         db.PlanTasks.AddRange(taskRows);
         return version;
     }
+
+    private sealed record ProgressNote(bool Say, JsonObject Brief);
+
+    /// <summary>Step 3 of the refresh: Pace and Projection, then the state, stored for the next refresh to compare with.</summary>
+    private async Task<ProgressNote> JudgeAsync(Aspiration a, DateOnly start, DateTime now, Guid refreshId, CancellationToken ct)
+    {
+        var snap = await progress.ComputeAsync(a, start, ct);
+        var number = snap.Readings + 1;
+        var tooEarly = number <= ProgressMath.TooEarlyRefreshes;
+        var middleOver = !tooEarly && snap is { Next: { } next, NextProjection: { } np } && np.Middle > next.Date;
+        var lateEarly = !tooEarly && snap is { Next: { } n2, NextProjection: { } p2 } && p2.Late.AddDays(7) <= n2.Date;
+        var pastSettle = !tooEarly && a.SettleForDate is { } settle && snap.FinalProjection is { } fp && fp.Early > settle;
+        var state = ProgressMath.Judge(number, middleOver, lateEarly, pastSettle, snap.Latest);
+
+        var changed = snap.Latest is not null && snap.Latest.State != state;
+        var recent = await db.ProgressReadings.AnyAsync(r => r.AspirationId == a.Id && r.Spoke && r.At > now.AddDays(-MonthlyAfterDays), ct);
+        var monthly = !changed && !tooEarly && !recent;
+        db.ProgressReadings.Add(new ProgressReading
+        {
+            Id = Guid.NewGuid(), UserId = a.UserId, AspirationId = a.Id, RefreshId = refreshId, PlanVersionId = snap.Current?.Id, At = now, Pace = snap.Pace,
+            State = state, MiddleOver = middleOver, LateEarly = lateEarly, PastSettleFor = pastSettle, Spoke = changed || monthly,
+        });
+        var brief = new JsonObject
+        {
+            ["say"] = changed ? "state_change" : "where_you_stand",
+            ["state"] = state,
+            ["previous_state"] = snap.Latest?.State,
+            ["pace"] = ProgressMath.PaceWords(snap.Pace),
+            ["next_milestone"] = snap.Next?.Title,
+        };
+        if (!tooEarly && snap.NextProjection is { } proj)
+        {
+            brief["projected_from"] = $"{ProgressMath.PartOfMonth(proj.Early)} {proj.Early:MMMM}";
+            brief["projected_to"] = $"{ProgressMath.PartOfMonth(proj.Late)} {proj.Late:MMMM}";
+        }
+        return new ProgressNote(changed || monthly, brief);
+    }
+
+    private const int MonthlyAfterDays = 28;
 
     private async Task<bool> MostlyDoneAsync(Guid aspirationId, DateOnly from, DateOnly toExclusive, CancellationToken ct)
     {
@@ -359,7 +413,7 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ICoachMode
         return first;
     }
 
-    private async Task<(string Rationale, Dictionary<string, string> Reasons)> PhraseAsync(JsonObject brief, List<string> codes, CancellationToken ct)
+    private async Task<(string Rationale, Dictionary<string, string> Reasons, string? Standing)> PhraseAsync(JsonObject brief, List<string> codes, bool needStanding, CancellationToken ct)
     {
         var choice = options.Value.For(CoachCallKind.WeeklyRefresh);
         var reply = new StringBuilder();
@@ -374,9 +428,11 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ICoachMode
         var rationale = parsed is null ? null : HandOff.Str(parsed, "rationale");
         var reasons = (parsed?["reasons"] as JsonObject)?.ToDictionary(p => p.Key, p => p.Value?.GetValue<string>() ?? "") ?? [];
         // Late, never faked: a reply without words for every change fails the job, which retries.
-        if (string.IsNullOrWhiteSpace(rationale) || codes.Any(c => !reasons.TryGetValue(c, out var r) || string.IsNullOrWhiteSpace(r)))
+        var standing = parsed is null ? null : HandOff.Str(parsed, "standing");
+        if (string.IsNullOrWhiteSpace(rationale) || codes.Any(c => !reasons.TryGetValue(c, out var r) || string.IsNullOrWhiteSpace(r))
+            || (needStanding && string.IsNullOrWhiteSpace(standing)))
             throw new CoachUnavailableException("refresh_reply_invalid");
-        return (rationale, reasons);
+        return (rationale, reasons, standing);
     }
 }
 
