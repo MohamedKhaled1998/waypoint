@@ -23,6 +23,21 @@ let n = 0;
 const chat = (api: CoachApi) => createCoachChat(api, { newId: () => `c${++n}`, now: () => '2026-01-05T09:00:00Z' });
 
 describe('Coach chat', () => {
+  it('sends the Aspiration the message is about, so the filter keeps it', async () => {
+    const api = fakeApi();
+    const seen: (string | undefined)[] = [];
+    api.send = async (_t: string, clientId: string, _e: (e: SseEvent) => void, aspirationId?: string) => {
+      api.sent.push(clientId);
+      seen.push(aspirationId);
+    };
+    const c = chat(api);
+
+    await c.send('About running', 'asp-1');
+
+    expect(seen).toEqual(['asp-1']);
+    expect(c.state.messages[0]?.aspirationId).toBe('asp-1');
+  });
+
   it('shows typing, then streams the reply into one Coach message', async () => {
     const api = fakeApi();
     const seen: { typing: boolean; last: string | undefined }[] = [];

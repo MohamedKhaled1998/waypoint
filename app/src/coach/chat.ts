@@ -5,6 +5,8 @@ export type StoredMessage = {
   role: 'user' | 'coach';
   text: string;
   clientId: string | null; createdAt: string;
+  /** The Aspiration the message is about, if any. */
+  aspirationId?: string | null;
   /** Set on a card message, e.g. "proposal". */
   card?: string | null;
   cardData?: Record<string, any> | null;
@@ -20,6 +22,7 @@ export type ChatMessage = {
   text: string;
   createdAt: string;
   status: 'sending' | 'saved' | 'sent';
+  aspirationId?: string;
   card?: string;
   cardData?: Record<string, any>;
 };
@@ -29,7 +32,7 @@ export type ChatState = { messages: ChatMessage[]; typing: boolean; late: boolea
 export interface CoachApi {
   history(): Promise<StoredMessage[]>;
   /** Resolves when the stream ends; rejects when the server cannot be reached. */
-  send(text: string, clientId: string, onEvent: (e: SseEvent) => void): Promise<void>;
+  send(text: string, clientId: string, onEvent: (e: SseEvent) => void, aspirationId?: string): Promise<void>;
 }
 
 type Deps = { newId: () => string; now: () => string; retryDelaysMs?: number[] };
@@ -69,6 +72,7 @@ export function createCoachChat(api: CoachApi, deps: Deps) {
               text: m.text,
               createdAt: m.createdAt,
               clientId: m.clientId ?? undefined,
+              aspirationId: m.aspirationId ?? undefined,
               card: m.card ?? undefined,
               cardData: m.cardData ?? undefined,
               // Stored but unanswered: still Saved, and resent with its client ID.
@@ -83,12 +87,12 @@ export function createCoachChat(api: CoachApi, deps: Deps) {
     },
 
     /** Adds the message at once, then delivers it. Deliveries run one at a time, in order. */
-    send(text: string): Promise<void> {
+    send(text: string, aspirationId?: string): Promise<void> {
       const clientId = deps.newId();
       set({
         messages: [
           ...chat.state.messages,
-          { id: clientId, clientId, role: 'user', text, createdAt: deps.now(), status: 'sending' },
+          { id: clientId, clientId, role: 'user', text, createdAt: deps.now(), status: 'sending', aspirationId },
         ],
       });
       return enqueue(() => deliver(clientId));
@@ -157,7 +161,7 @@ export function createCoachChat(api: CoachApi, deps: Deps) {
       }
     };
     try {
-      await api.send(mine.text, clientId, onEvent);
+      await api.send(mine.text, clientId, onEvent, mine.aspirationId);
     } catch {
       failed = true;
     }

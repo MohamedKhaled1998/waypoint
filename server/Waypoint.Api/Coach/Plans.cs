@@ -62,7 +62,6 @@ public static class Plans
         a.Title, a.Minutes,
         ReminderKind = a.ReminderKind, ReminderLeadMinutes = a.ReminderLeadMinutes, ReminderText = a.ReminderText, ReminderOn = a.ReminderOn,
         CheckIn = checkIn is null ? null : CheckIns.View(checkIn),
-        Guide = a.GuideJson is null ? null : JsonNode.Parse(a.GuideJson),
     };
 
     internal static async Task<IResult> Approve(Guid id, WaypointDb db, TimeProvider clock, JobQueue jobs, CancellationToken ct)
@@ -114,13 +113,12 @@ public static class Plans
                 if (checkedIn.Contains(a.Id)) kept.Add((a.Date, a.Title));
                 else db.ScheduledActions.Remove(a);
         }
-        var habitGuides = await db.Habits.Where(h => h.PlanVersionId == id && h.GuideJson != null).ToDictionaryAsync(h => h.Id, h => h.GuideJson, ct);
-        var taskGuides = await db.PlanTasks.Where(t => t.PlanVersionId == id && t.GuideJson != null).ToDictionaryAsync(t => t.Id, t => t.GuideJson, ct);
+        var added = new List<ScheduledAction>();
         foreach (var a in JsonNode.Parse(version.TwoWeeksJson)!.AsArray().Select(a => a!.AsObject()))
         {
             if (kept.Contains((PlanRules.ParseDate(HandOff.Str(a, "date"))!.Value, HandOff.Str(a, "action")!))) continue;
             // Linked by the IDs the draft stored, never by title or label.
-            db.ScheduledActions.Add(new ScheduledAction
+            added.Add(new ScheduledAction
             {
                 Id = Guid.NewGuid(), UserId = version.UserId, AspirationId = version.AspirationId, PlanVersionId = id,
                 HabitId = Ref(a, "habitId"), TaskId = Ref(a, "taskId"), SlotId = Ref(a, "slotId")!.Value,
@@ -128,15 +126,11 @@ public static class Plans
                 Minutes = (int)HandOff.Num(a, "minutes")!.Value,
                 ReminderKind = HandOff.Str(a, "reminder") == ReminderKinds.GetReady ? ReminderKinds.GetReady : ReminderKinds.Now,
                 ReminderLeadMinutes = HandOff.Str(a, "reminder") == ReminderKinds.GetReady ? LeadFrom(a) : null,
-                GuideJson = Ref(a, "habitId") is { } hid && habitGuides.TryGetValue(hid, out var hg) ? hg
-                    : Ref(a, "taskId") is { } tid && taskGuides.TryGetValue(tid, out var tg) ? tg : null,
             });
         }
-        // Referral cards for the Guides this version carries: shown once approved, and only if the referral is new.
-        var approvedGuides = (await db.Habits.Where(h => h.PlanVersionId == id && h.GuideJson != null).Select(h => new { h.Title, h.GuideJson }).ToListAsync(ct))
-            .Concat(await db.PlanTasks.Where(t => t.PlanVersionId == id && t.GuideJson != null).Select(t => new { t.Title, t.GuideJson }).ToListAsync(ct))
-            .Select(g => new KeyValuePair<string, JsonObject>(g.Title, JsonNode.Parse(g.GuideJson!)!.AsObject()));
-        await GuideReferrals.PostIfNewAsync(db, clock, version.AspirationId, approvedGuides, ct);
+        db.ScheduledActions.AddRange(added);
+        // Several Aspirations share the Slots: places are settled across all of them, never ranked by the user.
+        await Scheduling.ResolveAsync(db, version.AspirationId, version.StartDate, added, ct);
         // The reminder text is written after approval, so a slow or failing model never holds up the Plan.
         jobs.Add(JobKinds.ReminderText, version.UserId, new Dictionary<string, Guid> { ["planVersionId"] = id }, version.AspirationId);
         // The first approved Plan books the first Weekly refresh, after the Plan's first day.
@@ -189,11 +183,11 @@ public static class Plans
     }
 
     public sealed record MilestoneView(Guid Id, DateOnly Date, string Title, string ReachedWhen, string Kind, string State);
-    public sealed record HabitView(Guid Id, string Title, int TimesPerWeek, int Minutes, IEnumerable<string?> Slots, JsonNode? Guide = null);
-    public sealed record TaskView(Guid Id, string Title, int Minutes, DateOnly? Due, string? Milestone, JsonNode? Guide = null);
+    public sealed record HabitView(Guid Id, string Title, int TimesPerWeek, int Minutes, IEnumerable<string?> Slots);
+    public sealed record TaskView(Guid Id, string Title, int Minutes, DateOnly? Due, string? Milestone);
     public sealed record PlanVersionView(Guid Id, Guid AspirationId, string ShortName, string Hue, int? Number, string Status, string Reason,
         string Rationale, string Ramp, JsonNode? Assumptions, DateOnly StartDate, IEnumerable<MilestoneView> Milestones,
-        IEnumerable<HabitView> Habits, IEnumerable<TaskView> Tasks, JsonNode? TwoWeeks, Guid? RefreshId, JsonNode? Changes, bool AutoApplied, int? ReplacesNumber, JsonNode? GuideLog = null);
+        IEnumerable<HabitView> Habits, IEnumerable<TaskView> Tasks, JsonNode? TwoWeeks, Guid? RefreshId, JsonNode? Changes, bool AutoApplied, int? ReplacesNumber);
 
     private static async Task<PlanVersionView> ViewAsync(WaypointDb db, PlanVersion v, CancellationToken ct)
     {
@@ -206,13 +200,12 @@ public static class Plans
             JsonNode.Parse(v.AssumptionsJson), v.StartDate,
             milestones.Select(m => new MilestoneView(m.Id, m.Date, m.Title, m.ReachedWhen, m.Kind, m.State)).ToList(),
             habits.Select(h => new HabitView(h.Id, h.Title, h.TimesPerWeek, h.Minutes,
-                h.SlotIds.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(s => slots.GetValueOrDefault(Guid.Parse(s))).ToList(), h.GuideJson is null ? null : JsonNode.Parse(h.GuideJson))).ToList(),
-            tasks.Select(t => new TaskView(t.Id, t.Title, t.Minutes, t.DueDate, milestones.FirstOrDefault(m => m.Id == t.MilestoneId)?.Title, t.GuideJson is null ? null : JsonNode.Parse(t.GuideJson))).ToList(),
+                h.SlotIds.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(s => slots.GetValueOrDefault(Guid.Parse(s))).ToList())).ToList(),
+            tasks.Select(t => new TaskView(t.Id, t.Title, t.Minutes, t.DueDate, milestones.FirstOrDefault(m => m.Id == t.MilestoneId)?.Title)).ToList(),
             JsonNode.Parse(v.TwoWeeksJson), v.RefreshId, v.ChangesJson is null ? null : JsonNode.Parse(v.ChangesJson), v.AutoApplied,
             // What a proposal would replace: that version stays in the Plan's history.
             v.Status == PlanVersionStatus.Proposed
                 ? await db.PlanVersions.Where(p => p.AspirationId == v.AspirationId && p.Status == PlanVersionStatus.Approved).Select(p => p.Number).FirstOrDefaultAsync(ct)
-                : null,
-            v.GuideLogJson is null ? null : JsonNode.Parse(v.GuideLogJson));
+                : null);
     }
 }

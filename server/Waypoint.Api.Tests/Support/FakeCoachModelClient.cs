@@ -15,9 +15,7 @@ public sealed class FakeCoachModelClient : ICoachModelClient
     public void Enqueue(params string[] chunks) => Script.Enqueue(chunks);
 
     /// <summary>Answers a request itself when it returns chunks, before <see cref="Script"/>; for tests with many jobs in flight.</summary>
-    public Func<CoachRequest, string[]?>? Responder { get; set; }
-
-    public FakeCoachModelClient() => Responder = req => ReminderTextFor(req) ?? WeeklyRefreshFor(req) ?? GuideFor(req);
+    public Func<CoachRequest, string[]?>? Responder { get; set; } = req => ReminderTextFor(req) ?? WeeklyRefreshFor(req);
 
     /// <summary>The default responder: every reminder batch gets text for each Action in it, so those jobs never eat a scripted reply.</summary>
     public static string[]? ReminderTextFor(CoachRequest req)
@@ -25,32 +23,6 @@ public sealed class FakeCoachModelClient : ICoachModelClient
         if (req.Kind != CoachCallKind.ReminderText) return null;
         var ids = System.Text.Json.JsonDocument.Parse(req.Turns[0].Text).RootElement.GetProperty("actions").EnumerateArray().Select(a => a.GetProperty("id").GetString());
         return ["```json\n" + System.Text.Json.JsonSerializer.Serialize(new { reminders = ids.Select(id => new { id, text = "Easy run: shoes by the door." }) }) + "\n```"];
-    }
-
-    /// <summary>Scripted replies for Guide calls, one per call. With none queued the Coach writes no Guides, so other tests never meet one.</summary>
-    public Queue<string> GuideScript { get; } = new();
-    public void EnqueueGuides(object reply) => GuideScript.Enqueue("```json\n" + System.Text.Json.JsonSerializer.Serialize(reply) + "\n```");
-
-    /// <summary>
-    /// Scripted replies for weekly-refresh Guide calls, each for the one refresh whose request contains its marker (text of that
-    /// test's own Guide). Refreshes of other tests' users, which come due on the same fake clock, never take it.
-    /// </summary>
-    public List<(string Marker, string Reply)> RefreshGuideScript { get; } = [];
-    public void EnqueueRefreshGuides(string marker, object reply) =>
-        RefreshGuideScript.Add((marker, "```json\n" + System.Text.Json.JsonSerializer.Serialize(reply) + "\n```"));
-
-    public string[]? GuideFor(CoachRequest req)
-    {
-        if (req.Kind != CoachCallKind.Guide) return null;
-        if (req.Turns[0].Text.Contains("\"mode\":\"refresh\""))
-        {
-            var at = RefreshGuideScript.FindIndex(r => req.Turns[0].Text.Contains(r.Marker));
-            if (at < 0) return ["```json\n{\"guides\":[]}\n```"];
-            var reply = RefreshGuideScript[at].Reply;
-            RefreshGuideScript.RemoveAt(at);
-            return [reply];
-        }
-        return [GuideScript.Count > 0 ? GuideScript.Dequeue() : "```json\n{\"guides\":[]}\n```"];
     }
 
     /// <summary>The weekly refresh call: a rationale and a reason for every change code it was given.</summary>

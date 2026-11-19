@@ -17,19 +17,23 @@ public static class CoachChat
     // The stable system part: no user data, so it caches. Never add the user's name or email.
     public const string SystemPrompt =
         "You are the Coach in Waypoint, a personal coaching app. You help the user reach their Aspirations " +
-        "with warmth and honesty. Keep replies short and plain. Never invent facts about the user's progress.\n\n" +
-        "Guides: the app may show \"Current Guides\" (JSON) after the user's message. When the user asks to change a Guide, " +
-        "say briefly what you changed, then on a new line write " + GuideEdits.Marker + " followed by one json object " +
-        "{\"action\": the Action's title, \"reason\": one short sentence, \"guide\": {\"body\", \"targets\", \"withheld\", \"referral\"}} " +
-        "with the whole new Guide (same shape and rules as always: about 60-180 words, ranges with reasons, never a daily calorie " +
-        "target under 1,500 kcal for men or unknown / 1,200 for women, no deficit over about 500 kcal a day, load up by at most " +
-        "one small step). Never write the marker for anything else. If a Check-in doesn't match the Guide, ask what happened; " +
-        "never rewrite the Guide on a guess.\n" +
-        "Red flags (pain or a new injury, dizziness or chest symptoms, a condition or medication in play, pregnancy, signs of " +
-        "disordered eating, a request for a diagnosis): give no amounts, timing or load in that area, load nothing that touches an " +
-        "injured part, keep helping with everything else, offer to ease or Pause the affected Actions, and point to a doctor, " +
-        "physio or dietitian warmly and once. If a message suggests a crisis, drop coaching and point to real help (a local " +
-        "emergency number or crisis line) instead.";
+        "with warmth and honesty. Keep replies short and plain. Never invent facts about the user's progress. " +
+        "When you end on a question the user can answer in a few words, you may add, after the question, a new line with " +
+        "<<REPLIES>> and a JSON array of two to four short answers; never anything after it.";
+
+    public const string RepliesMarker = "<<REPLIES>>";
+
+    /// <summary>The quick replies a Coach reply carries: short non-empty strings, at most four of up to 40 characters.</summary>
+    public static List<string> QuickReplies(string? block)
+    {
+        try
+        {
+            return (System.Text.Json.Nodes.JsonNode.Parse(block ?? "[]") as System.Text.Json.Nodes.JsonArray ?? [])
+                .Select(n => n is System.Text.Json.Nodes.JsonValue v && v.TryGetValue<string>(out var s) ? s.Trim() : "")
+                .Where(s => s.Length is > 0 and <= 40).Take(4).ToList();
+        }
+        catch (JsonException) { return []; }
+    }
 
     public static void MapCoachChat(this WebApplication app)
     {
@@ -92,6 +96,16 @@ public static class CoachChat
 
         var watch = Stopwatch.StartNew();
         var reply = new StringBuilder();
+        var splitter = new HandOffSplitter(RepliesMarker);
+        // Trailing whitespace is held back until more text follows, so the stream ends where the stored text does.
+        var held = "";
+        async Task Emit(string piece)
+        {
+            var all = held + piece;
+            var visible = all.TrimEnd();
+            held = all[visible.Length..];
+            if (visible.Length > 0) await Write(http, "delta", new { text = visible }, ct);
+        }
         try
         {
             var choice = options.Value.For(CoachCallKind.Chat);
@@ -99,31 +113,33 @@ public static class CoachChat
                 .OrderByDescending(m => m.Seq).Take(WindowSize).OrderBy(m => m.Seq).ToListAsync(ct);
             var turns = window.SkipWhile(m => m.Role != "user")
                 .Select(m => new CoachTurn(m.Role == "user" ? "user" : "assistant", m.Text)).ToList();
-            if (await GuideEdits.ContextAsync(db, ct) is { } guides && turns.Count > 0)
-                turns[^1] = turns[^1] with { Text = turns[^1].Text + "\n\n[Current Guides: " + guides + "]" };
-            var filter = new MarkerFilter(GuideEdits.Marker);
 
             await foreach (var chunk in model.StreamAsync(
                 new CoachRequest(CoachCallKind.Chat, choice.Provider, choice.Model, SystemPrompt, turns), ct))
             {
-                if (filter.Feed(chunk) is { Length: > 0 } show) await Write(http, "delta", new { text = show }, ct);
+                reply.Append(chunk);
+                // The quick replies are not part of what the Coach says: they never reach the stream.
+                var show = splitter.Feed(chunk);
+                if (show.Length > 0) await Emit(show);
             }
-            if (filter.Flush() is { Length: > 0 } rest) await Write(http, "delta", new { text = rest }, ct);
-            reply.Append(filter.Visible.ToString().TrimEnd());
-            if (reply.Length == 0) throw new CoachUnavailableException("empty_reply");
-            (Guid AspirationId, System.Text.Json.Nodes.JsonObject Card)? edited = filter.Marked
-                ? await GuideEdits.ApplyAsync(db, clock, filter.Payload.ToString(), user.AspirationId, ct) : null;
+            var tail = splitter.Finish();
+            if (tail.Length > 0) await Emit(tail);
+            var (spoken, block) = HandOffSplitter.Split(reply.ToString(), RepliesMarker);
+            // Only the quick replies, or nothing, is no reply: the Coach is late, never faked.
+            var said = spoken.TrimEnd();
+            if (said.Length == 0) throw new CoachUnavailableException("empty_reply");
+            var replies = QuickReplies(block);
 
             var coach = new ChatMessage
             {
-                Id = Guid.NewGuid(), UserId = user.UserId, Role = "coach", Text = reply.ToString(),
-                AspirationId = user.AspirationId, InReplyToId = user.Id, CreatedAt = clock.GetUtcNow().UtcDateTime,
-                Card = edited is null ? null : "guide", CardJson = edited?.Card.ToJsonString(),
+                Id = Guid.NewGuid(), UserId = user.UserId, Role = "coach", Text = said,
+                AspirationId = user.AspirationId, InReplyToId = user.Id,
+                CardJson = replies.Count == 0 ? null : new System.Text.Json.Nodes.JsonObject { ["quickReplies"] = new System.Text.Json.Nodes.JsonArray(replies.Select(r => (System.Text.Json.Nodes.JsonNode)r).ToArray()) }.ToJsonString(), CreatedAt = clock.GetUtcNow().UtcDateTime,
             };
             db.ChatMessages.Add(coach);
             await db.SaveChangesAsync(ct);
             log.LogInformation("Coach reply {MessageId} for {UserMessageId} in {ElapsedMs} ms, {Chars} chars",
-                coach.Id, user.Id, watch.ElapsedMilliseconds, reply.Length);
+                coach.Id, user.Id, watch.ElapsedMilliseconds, said.Length);
             await Write(http, "done", new { messageId = coach.Id }, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)

@@ -1,5 +1,3 @@
-import type { Guide } from './guide';
-
 export type CheckInState = 'done' | 'partly' | 'skipped';
 
 export type CheckInView = {
@@ -37,8 +35,6 @@ export type ScheduledActionView = {
   /** Written ahead by the server, so a reminder needs no model call. Null until it arrives. */
   reminderText?: string | null;
   reminderOn?: boolean;
-  /** The Action's how-to, if the Coach wrote one. */
-  guide?: Guide | null;
 };
 
 export type TodayModel = {

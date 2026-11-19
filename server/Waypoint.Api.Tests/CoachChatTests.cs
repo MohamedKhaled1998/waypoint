@@ -42,6 +42,50 @@ public sealed class CoachChatTests(WaypointApiFactory factory) : IClassFixture<W
         client.GetFromJsonAsync<StoredMessage[]>("/coach/messages")!;
 
     [Fact]
+    public async Task A_reply_of_only_quick_replies_is_a_failed_call_not_an_empty_bubble()
+    {
+        factory.Coach.Fail = false;
+        factory.Coach.Chunks = ["<<REPLIES>>[\"Yes\",\"No\"]"];
+        var client = await SignedInClientAsync();
+
+        var events = await SendAsync(client, "Hi", "e-1");
+
+        Assert.Equal(["error"], events.Select(e => e.Name));
+        Assert.Equal(["user"], (await MessagesAsync(client)).Select(m => m.Role));
+    }
+
+    [Fact]
+    public async Task The_streamed_text_is_the_stored_text_with_no_trailing_newline()
+    {
+        factory.Coach.Fail = false;
+        factory.Coach.Chunks = ["Shall we move it?", "\n", "<<REPLIES>>[\"Yes\"]"];
+        var client = await SignedInClientAsync();
+
+        var events = await SendAsync(client, "Hi", "e-2");
+
+        var streamed = string.Concat(events.Where(e => e.Name == "delta").Select(e => e.Data.GetProperty("text").GetString()));
+        Assert.Equal("Shall we move it?", streamed);
+        Assert.Equal(streamed, (await MessagesAsync(client))[1].Text);
+    }
+
+    [Fact]
+    public async Task A_question_can_carry_quick_replies_that_never_show_in_the_text()
+    {
+        factory.Coach.Fail = false;
+        factory.Coach.Chunks = ["Shall we move your run ", "to Thursday?\n<<RE", "PLIES>>[\"Yes\",\"Not now\", 3, \"\"]"];
+        var client = await SignedInClientAsync();
+
+        var events = await SendAsync(client, "I can't run Wednesday", "q-1");
+
+        Assert.Equal("Shall we move your run to Thursday?", string.Concat(events.Where(e => e.Name == "delta").Select(e => e.Data.GetProperty("text").GetString())).TrimEnd());
+        var thread = await client.GetFromJsonAsync<JsonElement>("/coach/messages");
+        var coach = thread[1];
+        Assert.Equal("Shall we move your run to Thursday?", coach.GetProperty("text").GetString());
+        Assert.Equal(["Yes", "Not now"], coach.GetProperty("cardData").GetProperty("quickReplies").EnumerateArray().Select(r => r.GetString()));
+        Assert.Equal(JsonValueKind.Null, coach.GetProperty("card").ValueKind);
+    }
+
+    [Fact]
     public async Task A_message_streams_delta_events_then_done_and_both_messages_are_stored()
     {
         factory.Coach.Fail = false;

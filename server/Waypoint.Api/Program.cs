@@ -34,7 +34,6 @@ builder.Services.AddScoped<CoachMessenger>();
 builder.Services.AddScoped<JobQueue>();
 builder.Services.AddScoped<PlanDrafter>();
 builder.Services.AddScoped<ReminderWriter>();
-builder.Services.AddScoped<GuideWriter>();
 builder.Services.AddScoped<WeeklyRefreshRunner>();
 builder.Services.AddScoped<RefreshApplier>();
 builder.Services.AddScoped<CheckInReplies>();

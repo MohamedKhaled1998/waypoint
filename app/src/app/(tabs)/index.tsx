@@ -152,7 +152,6 @@ export default function TodayScreen() {
         onClose={() => setSheet(null)}
         onSubmit={(req) => task.submit(req)}
         slots={slots}
-        history={actions}
         now={now}
         onMove={(date, slotId) => move(sheet!.action.id, date, slotId)}
       />

@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import { StyleSheet, useUnistyles } from 'react-native-unistyles';
 import { Button } from '../ui/Button';
 import { Text } from '../ui/Text';
-import { guideSheet } from './guide';
 import type { SlotView } from './offline';
 import { FEELING_CHIPS, SKIP_CHIPS, STOPPED_SHORT_CHIPS, createActionSheet, moveOptions, partlyChips } from './sheet';
 import type { CheckInRequest, CheckInState, ScheduledActionView } from './today';
@@ -16,8 +15,6 @@ type Props = {
   onSubmit: (req: CheckInRequest) => Promise<void>;
   slots: SlotView[];
   onMove: (date: string, slotId: string) => Promise<void>;
-  /** The cached Actions, to count how many times this one was done. */
-  history: ScheduledActionView[];
   now: { date: string; time: string };
 };
 
@@ -35,7 +32,7 @@ export function ActionSheet({ action, ...rest }: Props) {
   return <Sheet key={action.id + (rest.initialChoice ?? '')} action={action} {...rest} />;
 }
 
-function Sheet({ action, initialChoice, onClose, onSubmit, slots, onMove, now, history }: Props & { action: ScheduledActionView }) {
+function Sheet({ action, initialChoice, onClose, onSubmit, slots, onMove, now }: Props & { action: ScheduledActionView }) {
   const { t } = useTranslation();
   const { theme } = useUnistyles();
   const sheet = useMemo(() => {
@@ -48,8 +45,6 @@ function Sheet({ action, initialChoice, onClose, onSubmit, slots, onMove, now, h
     fn();
     setTick((n) => n + 1);
   };
-  const how = useMemo(() => guideSheet(action, history), [action, history]);
-  const [howOpen, setHowOpen] = useState(how?.openByItself ?? false);
   const [notToday, setNotToday] = useState(false);
   const [moving, setMoving] = useState(false);
   const options = useMemo(() => moveOptions(action, slots, now), [action, slots, now]);
@@ -74,30 +69,6 @@ function Sheet({ action, initialChoice, onClose, onSubmit, slots, onMove, now, h
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <Text variant="heading">{action.title}</Text>
           <Text muted>{t('today.sheet.meta', { time: action.slotStart ?? '', minutes: action.minutes })}</Text>
-
-          {how && s.step === 1 && !notToday && !moving ? (
-            <View style={styles.howTo}>
-              <Pressable accessibilityRole="button" accessibilityState={{ expanded: howOpen }} onPress={() => setHowOpen(!howOpen)}>
-                <Text variant="label">{t('today.sheet.howTo')}</Text>
-              </Pressable>
-              {howOpen ? (
-                <>
-                  <Text>{how.guide.body}</Text>
-                  {how.guide.targets.map((g) => (
-                    <Text key={g.what} muted>
-                      {t('today.sheet.howToTarget', { what: g.what, low: g.low, high: g.high, unit: g.unit })} · {g.why}
-                    </Text>
-                  ))}
-                  {how.referralCard ? (
-                    <View style={styles.referral}>
-                      <Text variant="label">{t('today.sheet.referralTitle')}</Text>
-                      <Text>{how.referralCard}</Text>
-                    </View>
-                  ) : null}
-                </>
-              ) : null}
-            </View>
-          ) : null}
 
           {s.step === 1 && !notToday && !moving ? (
             <>
@@ -226,15 +197,6 @@ const styles = StyleSheet.create((theme) => ({
     maxHeight: '85%',
   },
   content: { padding: theme.space.xl, gap: theme.space.md },
-  howTo: { gap: theme.space.sm },
-  referral: {
-    gap: theme.space.xs,
-    padding: theme.space.md,
-    borderRadius: theme.radii.md,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.accentTint,
-  },
   tiles: { flexDirection: 'row', gap: theme.space.sm },
   tile: {
     flex: 1,

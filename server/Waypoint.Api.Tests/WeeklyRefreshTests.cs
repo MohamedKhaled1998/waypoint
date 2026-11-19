@@ -27,11 +27,10 @@ public sealed class WeeklyRefreshTests(WaypointApiFactory factory) : PlanTestBas
     }
 
     /// <summary>A signed-in user with an approved first Plan starting tomorrow (Tuesday); share in hours a week.</summary>
-    private async Task<(HttpClient Client, Guid UserId, Guid AspirationId, int Shift)> ApprovedPlanAsync(double shareHours = 3, object? guides = null)
+    private async Task<(HttpClient Client, Guid UserId, Guid AspirationId, int Shift)> ApprovedPlanAsync(double shareHours = 3)
     {
         var shift = AlignToMonday();
         await RunJobsAsync(); // earlier tests' Check-in replies and refreshes come due as the clock moves; they must not take this Plan's scripted reply
-        if (guides is not null) { factory.Coach.GuideScript.Clear(); factory.Coach.EnqueueGuides(guides); } // after the flush, so nothing else takes it
         var hand = HandOff(settleFor: "2027-01-01");
         hand["aspiration"]!["hoped_for_date"] = "2026-12-20";
         hand["aspiration"]!["share_hours_per_week"] = shareHours;
@@ -259,48 +258,5 @@ public sealed class WeeklyRefreshTests(WaypointApiFactory factory) : PlanTestBas
         factory.Clock.Advance(TimeSpan.FromMinutes(2)); // backoff of the first retry is a minute
         await RunJobsAsync();
         Assert.NotNull(await CurrentRefreshAsync(userId));
-    }
-
-    [Fact]
-    public async Task Guide_changes_are_part_of_the_refresh_proposal_and_kept_with_its_version()
-    {
-        string Body(string extra) => string.Join(" ", Enumerable.Repeat("Warm up, run easy, walk when you need to.", 9)) + extra;
-        object Guide(string extra, int high) => new { guides = new[] { new { action = "Easy run", body = Body(extra), targets = new[] { new { what = "Run time", low = 20, high, unit = "min", why = "a small step" } },
-            withheld = Array.Empty<object>(), referral = "", reason = "You kept up, so five more minutes." } } };
-        var (_, userId, _, _) = await ApprovedPlanAsync(guides: Guide(" Marker birch.", 25));
-        factory.Coach.EnqueueRefreshGuides("Marker birch.", Guide(" Marker birch. Add five minutes.", 30));
-
-        var refresh = await RefreshAfterAsync(userId, "done");
-        var proposal = await VersionAsync(userId, ProposalOf(refresh));
-
-        var change = proposal.GetProperty("changes").GetProperty("changes").EnumerateArray().Single(c => c.GetProperty("what").GetString() == "guide");
-        Assert.Equal("Easy run", change.GetProperty("title").GetString());
-        Assert.Equal("You kept up, so five more minutes.", change.GetProperty("reason").GetString());
-        var run = proposal.GetProperty("habits").EnumerateArray().Single(h => h.GetProperty("title").GetString() == "Easy run");
-        Assert.Equal(30, run.GetProperty("guide").GetProperty("targets")[0].GetProperty("high").GetDouble());
-
-        // Until it is approved the Action keeps the Guide it had; accepting makes the new one current.
-        var before = (await (await ReauthAsync(userId)).GetFromJsonAsync<JsonElement[]>("/scheduled-actions"))!.First(a => a.GetProperty("title").GetString() == "Easy run");
-        Assert.Equal(25, before.GetProperty("guide").GetProperty("targets")[0].GetProperty("high").GetDouble());
-        await AcceptAsync(userId, refresh);
-        var after = (await (await ReauthAsync(userId)).GetFromJsonAsync<JsonElement[]>("/scheduled-actions"))!.Last(a => a.GetProperty("title").GetString() == "Easy run");
-        Assert.Equal(30, after.GetProperty("guide").GetProperty("targets")[0].GetProperty("high").GetDouble());
-    }
-
-    [Fact]
-    public async Task A_referral_that_a_refresh_proposes_shows_as_a_card_only_once_the_proposal_is_accepted()
-    {
-        string Body(string extra) => string.Join(" ", Enumerable.Repeat("Warm up, run easy, walk when you need to.", 9)) + extra;
-        object Guide(string extra, string referral, object[] withheld) => new { guides = new[] { new { action = "Easy run", body = Body(extra), targets = new[] { new { what = "Run time", low = 20, high = 25, unit = "min", why = "a small step" } },
-            withheld, referral, reason = "Your knee hurt this week." } } };
-        var (_, userId, _, _) = await ApprovedPlanAsync(guides: Guide(" Marker ember.", "", []));
-        factory.Coach.EnqueueRefreshGuides("Marker ember.", Guide(" Marker ember. Skip hills.", "A sore knee is worth a word with your physio.", [new { area = "leg load", reason = "your knee hurts" }]));
-
-        var refresh = await RefreshAfterAsync(userId, "done");
-        async Task<int> CardsAsync() => (await (await ReauthAsync(userId)).GetFromJsonAsync<JsonElement[]>("/coach/messages"))!.Count(m => m.GetProperty("card").GetString() == "referral");
-
-        Assert.Equal(0, await CardsAsync()); // proposed, not approved: nothing has changed for the user yet
-        await AcceptAsync(userId, refresh);
-        Assert.Equal(1, await CardsAsync());
     }
 }

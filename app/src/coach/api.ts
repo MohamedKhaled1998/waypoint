@@ -24,8 +24,8 @@ export function httpCoachApi(auth: Auth): CoachApi {
     async history() {
       return (await (await call('/coach/messages', { method: 'GET' })).json()) as StoredMessage[];
     },
-    async send(text, clientId, onEvent) {
-      const res = await call('/coach/messages', { method: 'POST', body: JSON.stringify({ text, clientId }) });
+    async send(text, clientId, onEvent, aspirationId) {
+      const res = await call('/coach/messages', { method: 'POST', body: JSON.stringify({ text, clientId, aspirationId }) });
       const parser = createSseParser();
       const decoder = new TextDecoder();
       const reader = res.body!.getReader();

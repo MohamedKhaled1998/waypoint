@@ -10,7 +10,6 @@ public static class JobKinds
     public const string Plan = "plan";
     public const string CheckInReply = "check_in_reply";
     public const string ReminderText = "reminder_text";
-    public const string GuideWrite = "guide_write";
     public const string PushMessage = "push_message";
     public const string WeeklyRefresh = "weekly_refresh";
     public const string RefreshApply = "refresh_apply";
@@ -84,9 +83,6 @@ public sealed class JobRunner(IServiceScopeFactory scopes, TimeProvider clock, I
                     break;
                 case JobKinds.ReminderText:
                     await sp.GetRequiredService<ReminderWriter>().WriteAsync(ids["planVersionId"], ct);
-                    break;
-                case JobKinds.GuideWrite:
-                    await sp.GetRequiredService<GuideWriter>().WriteAsync(ids["planVersionId"], ct);
                     break;
                 case JobKinds.PushMessage:
                     await sp.GetRequiredService<Waypoint.Api.Push.PushNotifier>().SendForMessageAsync(ids["chatMessageId"], ct);

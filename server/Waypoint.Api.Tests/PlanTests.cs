@@ -118,12 +118,12 @@ public sealed class PlanTests(WaypointApiFactory factory) : PlanTestBase(factory
         var (c, _, _, aspirationId) = await ConfirmedAsync();
         Script(Broken(how));
         Script(Plan());
-        var calls = factory.Coach.Requests.Count(r => r.Kind == CoachCallKind.Plan);
+        var calls = factory.Coach.Requests.Count;
         await RunJobsAsync();
         await RunJobsAsync(); // the "Plan ready" push job
 
-        Assert.Equal(2, factory.Coach.Requests.Count(r => r.Kind == CoachCallKind.Plan) - calls);
-        var second = factory.Coach.Requests.Last(r => r.Kind == CoachCallKind.Plan);
+        Assert.Equal(2, factory.Coach.Requests.Count - calls);
+        var second = factory.Coach.Requests.Last();
         Assert.Contains(second.Turns, t => t.Role == "user" && t.Text.Contains(ProblemFor(how)));
 
         // The valid second draft is the one stored, and the rejected one left nothing behind.

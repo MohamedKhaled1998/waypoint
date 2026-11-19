@@ -205,8 +205,6 @@ public sealed class PlanVersion
     public string? ChangesJson { get; set; }
     /// <summary>Approved by the server after a day without an answer, not by the user.</summary>
     public bool AutoApplied { get; set; }
-    /// <summary>Guide changes made while this version was in force (chat requests), each with its reason, as a JSON array.</summary>
-    public string? GuideLogJson { get; set; }
 }
 
 public sealed class Milestone
@@ -236,8 +234,6 @@ public sealed class Habit
     public int Minutes { get; set; }
     /// <summary>Comma-separated Slot IDs.</summary>
     public required string SlotIds { get; set; }
-    /// <summary>The Action's Guide as JSON (<see cref="Waypoint.Api.Coach.GuideRules"/>); null when it has none.</summary>
-    public string? GuideJson { get; set; }
 }
 
 /// <summary>A one-off Action on a Milestone, with a date or, when <see cref="DueDate"/> is null, "this week".</summary>
@@ -250,7 +246,6 @@ public sealed class PlanTask
     public required string Title { get; set; }
     public int Minutes { get; set; }
     public DateOnly? DueDate { get; set; }
-    public string? GuideJson { get; set; }
 }
 
 /// <summary>An occurrence in the two-week window. Exists only once its Plan version is approved.</summary>
@@ -275,8 +270,6 @@ public sealed class ScheduledAction
     /// <summary>Written ahead by the light model, so a reminder needs no model call. Null until written.</summary>
     public string? ReminderText { get; set; }
     public bool ReminderOn { get; set; } = true;
-    /// <summary>The Guide as it stands, copied from the habit or task and kept up to date when a chat request changes it.</summary>
-    public string? GuideJson { get; set; }
 }
 
 public static class ReminderKinds

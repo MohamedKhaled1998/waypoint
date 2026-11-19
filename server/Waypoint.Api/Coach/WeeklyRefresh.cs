@@ -204,7 +204,7 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ICoachMode
         var habitRows = habits.Select(h => (H: h, New: new Habit
         {
             Id = Guid.NewGuid(), UserId = aspiration.UserId, PlanVersionId = version.Id, Title = h.Title, TimesPerWeek = h.Times, Minutes = h.Minutes,
-            SlotIds = string.Join(",", h.SlotIds), GuideJson = oldHabits.First(o => o.Id == h.OldId).GuideJson,
+            SlotIds = string.Join(",", h.SlotIds),
         })).ToList();
 
         // Reminders carry over: a habit's new sessions keep how its latest one was set.
@@ -245,7 +245,7 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ICoachMode
         var taskRows = new List<PlanTask>();
         foreach (var t in oldTasks)
         {
-            var copy = new PlanTask { Id = Guid.NewGuid(), UserId = t.UserId, PlanVersionId = version.Id, MilestoneId = milestoneIds[t.MilestoneId], Title = t.Title, Minutes = t.Minutes, DueDate = t.DueDate, GuideJson = t.GuideJson };
+            var copy = new PlanTask { Id = Guid.NewGuid(), UserId = t.UserId, PlanVersionId = version.Id, MilestoneId = milestoneIds[t.MilestoneId], Title = t.Title, Minutes = t.Minutes, DueDate = t.DueDate };
             taskRows.Add(copy);
             if (scheduledBefore.Contains(t.Title) || (t.DueDate is { } d && d > windowEnd)) continue;
             if (PlaceTask(t, slots, used, start, windowEnd) is { } at)
@@ -267,13 +267,12 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ICoachMode
         var (rationale, reasons) = await PhraseAsync(brief, changes.Select(c => c["code"]!.GetValue<string>()).ToList(), ct);
         version.Rationale = rationale;
         foreach (var c in changes) c["reason"] = reasons[c["code"]!.GetValue<string>()];
-        changes.AddRange(await RefreshGuidesAsync(aspiration, habitRows.Select(r => r.New).ToList(), taskRows, mostly, ct));
         version.ChangesJson = new JsonObject
         {
             ["changes"] = new JsonArray(changes.ToArray<JsonNode?>()),
             ["stays"] = new JsonArray(
                 oldMilestones.Select(m => (JsonNode)new JsonObject { ["what"] = "milestone", ["title"] = m.Title, ["date"] = m.Date.ToString("yyyy-MM-dd") })
-                    .Concat(habits.Where(h => !changes.Any(c => c["what"]!.GetValue<string>() == "habit" && c["title"]!.GetValue<string>() == h.Title))
+                    .Concat(habits.Where(h => !changes.Any(c => c["title"]!.GetValue<string>() == h.Title))
                         .Select(h => (JsonNode)new JsonObject { ["what"] = "habit", ["title"] = h.Title, ["times_per_week"] = h.Times, ["minutes"] = h.Minutes })).ToArray()),
         }.ToJsonString();
 
@@ -285,59 +284,6 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ICoachMode
         db.Habits.AddRange(habitRows.Select(r => r.New));
         db.PlanTasks.AddRange(taskRows);
         return version;
-    }
-
-    /// <summary>
-    /// "Here's what I changed" for Guides: the Coach progresses each Guide by a small step, and only changes that pass
-    /// <see cref="GuideRules"/> (against the Guide they replace) are kept, with the Coach's reason. A reply the Coach can't
-    /// give throws, so the refresh is late rather than silent about Guides.
-    /// </summary>
-    private async Task<List<JsonObject>> RefreshGuidesAsync(Aspiration aspiration, List<Habit> habits, List<PlanTask> tasks, bool[] mostly, CancellationToken ct)
-    {
-        var current = habits.Where(h => h.GuideJson != null).Select(h => (h.Title, Set: (Action<string>)(g => h.GuideJson = g), Json: h.GuideJson!))
-            .Concat(tasks.Where(t => t.GuideJson != null).Select(t => (t.Title, Set: (Action<string>)(g => t.GuideJson = g), Json: t.GuideJson!))).ToList();
-        if (current.Count == 0) return [];
-
-        var interview = await db.Interviews.Where(i => i.AspirationId == aspiration.Id && i.HandOffJson != null).OrderByDescending(i => i.CreatedAt).FirstOrDefaultAsync(ct);
-        var about = GuideRules.About(interview?.HandOffJson);
-        var brief = new JsonObject
-        {
-            ["mode"] = "refresh",
-            ["domain_picture"] = (JsonNode.Parse(interview?.HandOffJson ?? "{}")?["aspiration"]?["domain_picture"])?.DeepClone(),
-            ["last_two_weeks_mostly_done"] = new JsonArray(mostly.Select(m => (JsonNode)m).ToArray()),
-            ["guides"] = new JsonArray(current.Select(c => (JsonNode)new JsonObject { ["action"] = c.Title, ["guide"] = JsonNode.Parse(c.Json) }).ToArray()),
-        };
-        var choice = options.Value.For(CoachCallKind.Guide);
-        var reply = new StringBuilder();
-        await foreach (var chunk in model.StreamAsync(new CoachRequest(CoachCallKind.Guide, choice.Provider, choice.Model, GuidePrompt.System,
-            [new CoachTurn("user", brief.ToJsonString())]), ct))
-            reply.Append(chunk);
-        if (GuideRules.ParseObject(reply.ToString())?["guides"] is not JsonArray list) throw new CoachUnavailableException("guide_reply_invalid");
-
-        var made = new List<JsonObject>();
-        var accepted = new HashSet<string>();
-        foreach (var item in list.OfType<JsonObject>())
-        {
-            var title = HandOff.Str(item, "action");
-            var reason = HandOff.Str(item, "reason");
-            var was = current.FirstOrDefault(c => c.Title == title);
-            if (was.Title is null || string.IsNullOrWhiteSpace(reason) || accepted.Contains(title!)) continue;
-            var before = JsonNode.Parse(was.Json)!.AsObject();
-            var problems = GuideRules.Validate(item, about, before);
-            if (problems.Count > 0)
-            {
-                log.LogInformation("Guide change for Aspiration {AspirationId} dropped: {Problems}", aspiration.Id, string.Join(",", problems));
-                continue;
-            }
-            var next = GuideRules.Normalise(item);
-            if (next.ToJsonString() == before.ToJsonString()) continue;
-            // The referral is kept as it was unless something new happened; a changed one shows as a new card.
-            was.Set(next.ToJsonString());
-            accepted.Add(title!);
-            made.Add(new JsonObject { ["code"] = "guide_changed", ["what"] = "guide", ["title"] = title, ["reason"] = reason!.Trim() });
-        }
-        // A changed referral shows as a card when the proposal is approved (see Plans.Approve), not while it is drafted.
-        return made;
     }
 
     private async Task<bool> MostlyDoneAsync(Guid aspirationId, DateOnly from, DateOnly toExclusive, CancellationToken ct)

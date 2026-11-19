@@ -315,8 +315,9 @@ public static class Interviews
 }
 
 /// <summary>Streams the visible part of a reply and holds back everything from the hand-off marker on.</summary>
-public sealed class HandOffSplitter
+public sealed class HandOffSplitter(string marker = InterviewPrompt.Marker)
 {
+    private readonly string _marker = marker;
     private readonly StringBuilder _pending = new();
     private bool _inBlock;
 
@@ -325,7 +326,7 @@ public sealed class HandOffSplitter
         if (_inBlock) return "";
         _pending.Append(chunk);
         var s = _pending.ToString();
-        var at = s.IndexOf(InterviewPrompt.Marker, StringComparison.Ordinal);
+        var at = s.IndexOf(_marker, StringComparison.Ordinal);
         if (at >= 0)
         {
             _inBlock = true;
@@ -334,19 +335,19 @@ public sealed class HandOffSplitter
         }
         // Keep back a tail that could be the start of the marker.
         var keep = 0;
-        for (var n = Math.Min(InterviewPrompt.Marker.Length - 1, s.Length); n > 0; n--)
-            if (s.EndsWith(InterviewPrompt.Marker[..n], StringComparison.Ordinal)) { keep = n; break; }
+        for (var n = Math.Min(_marker.Length - 1, s.Length); n > 0; n--)
+            if (s.EndsWith(_marker[..n], StringComparison.Ordinal)) { keep = n; break; }
         _pending.Clear().Append(s[^keep..]);
         return s[..^keep];
     }
 
     public string Finish() => _inBlock ? "" : _pending.ToString();
 
-    public static (string Text, string? Block) Split(string full)
+    public static (string Text, string? Block) Split(string full, string marker = InterviewPrompt.Marker)
     {
-        var at = full.IndexOf(InterviewPrompt.Marker, StringComparison.Ordinal);
+        var at = full.IndexOf(marker, StringComparison.Ordinal);
         if (at < 0) return (full, null);
-        var block = full[(at + InterviewPrompt.Marker.Length)..].Trim();
+        var block = full[(at + marker.Length)..].Trim();
         // Tolerate a fenced block.
         if (block.StartsWith("```", StringComparison.Ordinal))
             block = StripJsonTag(block.Trim('`').Trim());

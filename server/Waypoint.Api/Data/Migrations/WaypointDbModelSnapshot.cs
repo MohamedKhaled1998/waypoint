@@ -216,9 +216,6 @@ namespace Waypoint.Api.Data.Migrations
 
             modelBuilder.Entity("Waypoint.Api.Data.Habit", b =>
                 {
-                    b.Property<string>("GuideJson")
-                        .HasColumnType("longtext");
-
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("char(36)");
@@ -434,9 +431,6 @@ namespace Waypoint.Api.Data.Migrations
 
             modelBuilder.Entity("Waypoint.Api.Data.PlanTask", b =>
                 {
-                    b.Property<string>("GuideJson")
-                        .HasColumnType("longtext");
-
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("char(36)");
@@ -474,9 +468,6 @@ namespace Waypoint.Api.Data.Migrations
 
             modelBuilder.Entity("Waypoint.Api.Data.PlanVersion", b =>
                 {
-                    b.Property<string>("GuideLogJson")
-                        .HasColumnType("longtext");
-
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("char(36)");
@@ -581,9 +572,6 @@ namespace Waypoint.Api.Data.Migrations
 
             modelBuilder.Entity("Waypoint.Api.Data.ScheduledAction", b =>
                 {
-                    b.Property<string>("GuideJson")
-                        .HasColumnType("longtext");
-
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("char(36)");

@@ -48,9 +48,6 @@ export const en = {
       noNeedToExplain: 'No need to explain',
       coachWillAsk: 'Your Coach will ask about it and ease the next days.',
       failed: 'We could not save this. Please try again.',
-      howTo: 'How to',
-      howToTarget: '{{what}}: {{low}}–{{high}} {{unit}}',
-      referralTitle: 'Worth a word with a professional',
       prompt: { feeling: 'How did it feel?', stoppedShort: 'What stopped it short?', skipReason: 'Why skip?' },
     },
     reason: {
@@ -69,6 +66,8 @@ export const en = {
   progress: {
     emptyTitle: 'No Aspirations yet',
     emptyBody: 'Each Aspiration you add gets its own card here, with your Pace and Projection.',
+    addAspiration: 'Add an Aspiration',
+    aspirationCount: '{{current}} of {{max}}',
   },
   coach: {
     emptyTitle: 'Your Coach is here when you are ready',
@@ -80,9 +79,10 @@ export const en = {
     lateStrip: "Your Coach can't reply right now. Your messages are saved.",
     today: 'Today',
     yesterday: 'Yesterday',
-    guideTitle: 'Guide · {{action}}',
-    guideWithheld: 'Left out for now: {{areas}}',
-    referralTitle: 'Worth a word with a professional',
+    filterAll: 'All',
+    filterLabel: 'Show messages about {{name}}',
+    waitingTitle: '{{name}}: a Plan waits for your Review',
+    waitingReview: 'Review',
   },
   interview: {
     title: 'Interview',

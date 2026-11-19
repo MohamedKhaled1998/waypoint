@@ -2,12 +2,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { Tabs, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useUnistyles } from 'react-native-unistyles';
+import { useCoachBadge } from '../../coach/useCoachBadge';
 import { HeaderButton } from '../../ui/HeaderButton';
 
 export default function TabsLayout() {
   const { t } = useTranslation();
   const { theme } = useUnistyles();
   const router = useRouter();
+  const badge = useCoachBadge();
   return (
     <Tabs
       screenOptions={{
@@ -42,6 +44,7 @@ export default function TabsLayout() {
         name="coach"
         options={{
           title: t('tabs.coach'),
+          tabBarBadge: badge,
           tabBarIcon: ({ focused, size }) => <Ionicons name="chatbubble-outline" color={focused ? theme.colors.accent : theme.colors.textMuted} size={size} />,
         }}
       />
