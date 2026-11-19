@@ -443,7 +443,12 @@ public sealed class WeeklyRefreshTests(WaypointApiFactory factory) : PlanTestBas
 
         Assert.Contains(Codes(v, "changes"), c => c.GetProperty("code").GetString() == "ease_back");
         Assert.DoesNotContain(v.GetProperty("twoWeeks").EnumerateArray(), a => a.GetProperty("kind").GetString() == "catch_up");
-        Assert.Contains(Codes(v, "offers"), o => o.GetProperty("code").GetString() == "shift_dates");
+        // The dates move by a proposal of their own, not by an offer inside the refresh's version.
+        Assert.DoesNotContain(Codes(v, "offers"), o => o.GetProperty("code").GetString() == "shift_dates");
+        var cards = (await (await ReauthAsync(userId)).GetFromJsonAsync<JsonElement>("/coach/messages")).EnumerateArray()
+            .Where(m => m.GetProperty("card").GetString() == "proposal" && m.GetProperty("cardData").TryGetProperty("kind", out var k) && k.GetString() == "dates_later").ToList();
+        var dates = await VersionAsync(userId, Assert.Single(cards).GetProperty("cardData").GetProperty("planVersionId").GetGuid());
+        Assert.Equal("proposed", dates.GetProperty("status").GetString());
     }
 
     [Fact]

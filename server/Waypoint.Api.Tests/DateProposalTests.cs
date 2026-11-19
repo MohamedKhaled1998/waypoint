@@ -147,6 +147,106 @@ public sealed class DateProposalTests(WaypointApiFactory factory) : ProgressTest
         Assert.Equal(1, offers);
     }
 
+    // ---- Shortfall while easing back or re-thinking: the same later-dates proposal ----
+
+    /// <summary>
+    /// A user whose seeded Actions belong to the Easy run habit (90 planned minutes a week), so the refresh measures the week's shortfall.
+    /// No earlier readings: the state is too early, so only the shortfall can propose dates.
+    /// </summary>
+    private async Task<(HttpClient C, Guid UserId, Guid AspirationId)> ShortfallAsync(string weeks, DateOnly settleFor, string readings = "")
+    {
+        var (c, userId, aspirationId) = await SeedAsync(weeks, settleFor: settleFor, readings: readings);
+        await InDbAsync(userId, async db =>
+        {
+            var habit = await db.Habits.FirstAsync(h => h.Title == "Easy run");
+            await db.ScheduledActions.Where(a => a.AspirationId == aspirationId).ExecuteUpdateAsync(s => s.SetProperty(a => a.HabitId, habit.Id));
+            return 0;
+        });
+        return (c, userId, aspirationId);
+    }
+
+    private async Task ApplyOpenRefreshesAsync(Guid userId)
+    {
+        using var scope = factory.Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<CurrentUser>().Override = userId;
+        var applier = scope.ServiceProvider.GetRequiredService<Waypoint.Api.Coach.RefreshApplier>();
+        var db = scope.ServiceProvider.GetRequiredService<WaypointDb>();
+        foreach (var r in db.WeeklyRefreshes.Where(r => r.Status == RefreshStatus.Open).ToList()) await applier.ApplyAsync(r.Id, default);
+    }
+
+    private async Task<string> RefreshVersionChangesAsync(Guid userId) =>
+        await InDbAsync(userId, db => db.PlanVersions.Where(p => p.Reason == "weekly_refresh").OrderByDescending(p => p.CreatedAt).Select(p => p.ChangesJson!).FirstAsync());
+
+    [Theory]
+    [InlineData("easing_back", "1:90:skipped;2:90:done;3:90:done;4:90:done")]
+    [InlineData("re_thinking", "1:90:skipped;2:90:skipped;3:90:done;4:90:done")]
+    public async Task A_shortfall_while_easing_back_or_re_thinking_proposes_later_dates_capped_at_Settle_for_and_nothing_moves_until_approved(string band, string weeks)
+    {
+        // 90 minutes short at 90 planned a week is one week later: March 9, past Settle-for on March 4, so capped there.
+        var (c, userId, aspirationId) = await ShortfallAsync(weeks, settleFor: new DateOnly(2026, 3, 4));
+        if (band == "re_thinking") factory.Coach.Enqueue("A lot has been going on lately. What changed for you?");
+        await RefreshAsync(userId);
+
+        var proposal = await DateVersionAsync(c, "dates_later");
+        Assert.Equal("proposed", D(proposal, "status"));
+        Assert.Equal("2026-03-04", MilestoneDate(proposal));
+        var card = Assert.Single(await CoachCardsAsync(c, "proposal"));
+        Assert.Equal(aspirationId, card.GetProperty("aspirationId").GetGuid());
+
+        // One dates proposal, not an offer inside the refresh's own version; the Coach was told why the dates move.
+        Assert.DoesNotContain("shift_dates", await RefreshVersionChangesAsync(userId));
+        var brief = JsonDocument.Parse(factory.Coach.Requests.Last(r => r.Kind == Waypoint.Api.Coach.CoachCallKind.WeeklyRefresh
+            && r.Turns[0].Text.Contains("Half marathon")).Turns[0].Text).RootElement;
+        Assert.Equal(band == "easing_back" ? "EaseBack" : "Rethink", D(brief, "tolerance"));
+        var dates = brief.GetProperty("progress").GetProperty("dates");
+        Assert.Equal("shortfall", D(dates, "because"));
+        Assert.True(dates.GetProperty("capped_at_settle_for").GetBoolean());
+
+        // The refresh's auto-apply leaves it waiting, and the date stays until the user approves.
+        await ApplyOpenRefreshesAsync(userId);
+        Assert.Equal("proposed", D(await c.GetFromJsonAsync<JsonElement>($"/plan-versions/{proposal.GetProperty("id").GetGuid()}"), "status"));
+        Assert.Equal("2026-03-02", D((await c.GetFromJsonAsync<JsonElement>($"/progress/{aspirationId}")).GetProperty("milestones")[0], "date"));
+
+        var approved = await c.PostAsync($"/plan-versions/{proposal.GetProperty("id").GetGuid()}/approve", null);
+        Assert.True(approved.StatusCode == HttpStatusCode.OK, await approved.Content.ReadAsStringAsync());
+        Assert.Equal("2026-03-04", D((await c.GetFromJsonAsync<JsonElement>($"/progress/{aspirationId}")).GetProperty("milestones")[0], "date"));
+    }
+
+    [Fact]
+    public void A_shortfall_moves_open_Milestones_by_whole_weeks_of_the_planned_minutes_at_least_one()
+    {
+        Milestone M(string r, DateOnly d, string state = "upcoming") => new()
+            { Id = Guid.NewGuid(), UserId = Guid.NewGuid(), PlanVersionId = Guid.NewGuid(), Ref = r, Date = d, Title = r, ReachedWhen = "x", Kind = "effort", State = state };
+        List<Milestone> ms = [M("m0", new DateOnly(2026, 2, 2), "reached"), M("m1", new DateOnly(2026, 3, 2)), M("m2", new DateOnly(2026, 4, 6))];
+
+        var small = Waypoint.Api.Coach.DateProposals.ForShortfall(ms, 20, 90, null);
+        Assert.Equal(["m1", "m2"], small.Select(s => s.Ref));
+        Assert.Equal(new DateOnly(2026, 3, 9), small[0].After); // a little short is still one whole week
+
+        var big = Waypoint.Api.Coach.DateProposals.ForShortfall(ms, 100, 90, new DateOnly(2026, 4, 10));
+        Assert.Equal(new DateOnly(2026, 3, 16), big[0].After); // 100 of 90 rounds up to two weeks
+        Assert.Equal(new DateOnly(2026, 4, 10), big[1].After); // capped at Settle-for
+
+        Assert.Empty(Waypoint.Api.Coach.DateProposals.ForShortfall(ms, 0, 90, null));
+    }
+
+    [Fact]
+    public async Task Slipping_and_a_shortfall_in_the_same_refresh_make_one_dates_proposal()
+    {
+        // Slipping with the week just ended skipped (easing back): the Projection's proposal already counts that week.
+        var (c, userId, _) = await ShortfallAsync("1:100:skipped;2:100:partly:50;3:100:partly:50;4:100:partly:50",
+            settleFor: new DateOnly(2027, 1, 1), readings: "on_track;on_track;on_track+over");
+        await RefreshAsync(userId);
+        Assert.Equal("slipping", D(await ProgressOf(c), "state"));
+
+        Assert.Single(await CoachCardsAsync(c, "proposal"));
+        var brief = JsonDocument.Parse(factory.Coach.Requests.Last(r => r.Kind == Waypoint.Api.Coach.CoachCallKind.WeeklyRefresh
+            && r.Turns[0].Text.Contains("Half marathon")).Turns[0].Text).RootElement;
+        Assert.Equal("EaseBack", D(brief, "tolerance"));
+        Assert.False(brief.GetProperty("progress").GetProperty("dates").TryGetProperty("because", out _));
+        Assert.DoesNotContain("shift_dates", await RefreshVersionChangesAsync(userId));
+    }
+
     // ---- Approving rebases the proposal on the Plan as it is now ----
 
     private async Task<(HttpClient C, Guid UserId, Guid AspirationId, JsonElement Proposal)> SlippingProposalAsync()

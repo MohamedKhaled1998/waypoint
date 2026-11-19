@@ -30,6 +30,19 @@ public static class DateProposals
         return Shift(open, weeks * 7, settleFor, earliest: null);
     }
 
+    /// <summary>
+    /// Later dates for a shortfall while easing back or re-thinking: every open Milestone moves by the whole weeks the shortfall would take
+    /// at the Aspiration's planned minutes a week (rounded up, at least one), capped at Settle-for.
+    /// </summary>
+    public static List<DateShift> ForShortfall(IReadOnlyList<Milestone> milestones, int shortfallMinutes, int weeklyMinutes, DateOnly? settleFor)
+    {
+        if (shortfallMinutes <= 0) return [];
+        var open = milestones.Where(m => m.State != "reached").OrderBy(m => m.Date).ToList();
+        if (open.Count == 0) return [];
+        var weeks = weeklyMinutes > 0 ? Math.Max(1, (int)Math.Ceiling(shortfallMinutes / (double)weeklyMinutes)) : 1;
+        return Shift(open, weeks * 7, settleFor, earliest: null);
+    }
+
     /// <summary>Earlier dates: every open Milestone moves by the whole weeks the next one is ahead by, never before <paramref name="earliest"/>.</summary>
     public static List<DateShift> Sooner(IReadOnlyList<Milestone> milestones, DateOnly lateEnd, DateOnly earliest)
     {

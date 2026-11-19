@@ -25,7 +25,9 @@ public static class RefreshPrompt
 
         When "progress" holds "dates" ("say": "dates_proposal"), the app has put a proposal in front of the user: the listed
         Milestones would move later or earlier. Say it as a proposal the user decides on, never as done, and say if it is
-        capped at the Settle-for date. When it holds "choice", the final Milestone looks out of reach even at the
+        capped at the Settle-for date. When "dates" holds "because": "shortfall", the dates move because last week came up
+        short while the Plan is easing back or being re-thought, so the time is given back as later dates rather than piled on as Catch-up; say
+        that gently, as one line and one next step. When it holds "choice", the final Milestone looks out of reach even at the
         optimistic end: put the honest choice calmly, as three options and nothing moving until the user says so (move the
         date, keep the date with a smaller picture (name "settle_for_picture" up front when given), or make more room by
         giving the Aspiration a bigger share of the Time budget). Never blame, never promise.
@@ -475,7 +477,8 @@ public sealed partial class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, Pr
         }
 
         // Shortfall of the week just ended (habit minutes skipped or cut short; tasks move instead). Catch-up only while
-        // absorbing; while easing back or re-thinking the shortfall moves dates instead, as a proposal.
+        // absorbing; while easing back or re-thinking the shortfall moves dates instead, as a separate dates proposal
+        // (only from a refresh: a Time budget change or cut says nothing about last week).
         var shortfalls = (await db.ScheduledActions.Where(a => a.AspirationId == aspiration.Id && a.HabitId != null && a.Date >= start.AddDays(-7) && a.Date < start)
                 .Select(a => new { a.Title, a.Minutes, Check = db.CheckIns.Where(c => c.ScheduledActionId == a.Id).Select(c => new { c.State, c.MinutesSpent }).FirstOrDefault() })
                 .ToListAsync(ct))
@@ -529,8 +532,22 @@ public sealed partial class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, Pr
             var unplaced = shortfall - changes.Where(c => c["code"]!.GetValue<string>() == "catch_up").Sum(c => c["minutes"]!.GetValue<int>());
             if (unplaced > 0) offers.Add(new JsonObject { ["code"] = "shift_dates", ["what"] = "milestones", ["title"] = aspiration.ShortName, ["field"] = "offer", ["minutes"] = unplaced });
         }
-        else if (shortfall > 0)
-            offers.Add(new JsonObject { ["code"] = "shift_dates", ["what"] = "milestones", ["title"] = aspiration.ShortName, ["field"] = "offer", ["minutes"] = shortfall });
+        else if (shortfall > 0 && note is not null && note.Shifts.Count == 0 && !note.SettleChoice
+            && !await DateProposals.PendingAsync(db, aspiration.Id, DateProposals.Later, ct))
+        {
+            // Easing back or re-thinking: the shortfall moves dates instead, as the same proposal Slipping makes (one per refresh;
+            // a Projection's own dates proposal already counts this week, so it wins). It is not one of this version's changes.
+            var weekly = oldHabits.Where(h => h.AnchorId is null).Sum(h => h.TimesPerWeek * h.Minutes);
+            var shifts = DateProposals.ForShortfall(oldMilestones, shortfall, weekly, aspiration.SettleForDate);
+            if (shifts.Count > 0)
+            {
+                var dates = DatesBrief(shifts, DateProposals.Later, aspiration.SettleForDate);
+                dates["because"] = "shortfall";
+                note.Brief["dates"] = dates;
+                note.Reading.Spoke = true;
+                note = note with { Say = true, Shifts = shifts, DatesReason = DateProposals.Later };
+            }
+        }
         version.TwoWeeksJson = window.ToJsonString();
 
         // Words: the model phrases what the app decided.
@@ -680,7 +697,16 @@ public sealed partial class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, Pr
         return true;
     }
 
-    private sealed record ProgressNote(bool Say, JsonObject Brief, List<DateShift> Shifts, string? DatesReason, bool SettleChoice);
+    private sealed record ProgressNote(bool Say, JsonObject Brief, List<DateShift> Shifts, string? DatesReason, bool SettleChoice, ProgressReading Reading);
+
+    /// <summary>The "dates" the Coach words a dates proposal from: which Milestones move, from and to, and whether Settle-for capped them.</summary>
+    private static JsonObject DatesBrief(List<DateShift> shifts, string reason, DateOnly? settleFor) => new()
+    {
+        ["direction"] = reason == DateProposals.Later ? "later" : "earlier",
+        ["milestones"] = new JsonArray(shifts.Select(x => (JsonNode)new JsonObject
+            { ["title"] = x.Title, ["from"] = x.Before.ToString("MMMM d"), ["to"] = x.After.ToString("MMMM d") }).ToArray()),
+        ["capped_at_settle_for"] = reason == DateProposals.Later && settleFor is { } cap && shifts.Any(x => x.After == cap),
+    };
 
     /// <summary>Step 3 of the refresh: Pace and Projection, then the state, stored for the next refresh to compare with.</summary>
     private async Task<ProgressNote> JudgeAsync(Aspiration a, DateOnly start, DateTime now, Guid refreshId, CancellationToken ct)
@@ -712,11 +738,12 @@ public sealed partial class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, Pr
         var recent = await db.ProgressReadings.AnyAsync(r => r.AspirationId == a.Id && r.Spoke && r.At > now.AddDays(-MonthlyAfterDays), ct);
         var monthly = !changed && !tooEarly && !recent && shifts.Count == 0;
         var say = changed || monthly || shifts.Count > 0;
-        db.ProgressReadings.Add(new ProgressReading
+        var reading = new ProgressReading
         {
             Id = Guid.NewGuid(), UserId = a.UserId, AspirationId = a.Id, RefreshId = refreshId, PlanVersionId = snap.Current?.Id, At = now, Pace = snap.Pace,
             State = state, MiddleOver = middleOver, LateEarly = lateEarly, PastSettleFor = pastSettle, Spoke = say,
-        });
+        };
+        db.ProgressReadings.Add(reading);
         var brief = new JsonObject
         {
             ["say"] = changed ? "state_change" : "where_you_stand",
@@ -730,20 +757,13 @@ public sealed partial class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, Pr
             brief["projected_from"] = $"{ProgressMath.PartOfMonth(proj.Early)} {proj.Early:MMMM}";
             brief["projected_to"] = $"{ProgressMath.PartOfMonth(proj.Late)} {proj.Late:MMMM}";
         }
-        if (shifts.Count > 0)
-            brief["dates"] = new JsonObject
-            {
-                ["direction"] = datesReason == DateProposals.Later ? "later" : "earlier",
-                ["milestones"] = new JsonArray(shifts.Select(x => (JsonNode)new JsonObject
-                    { ["title"] = x.Title, ["from"] = x.Before.ToString("MMMM d"), ["to"] = x.After.ToString("MMMM d") }).ToArray()),
-                ["capped_at_settle_for"] = datesReason == DateProposals.Later && a.SettleForDate is { } cap && shifts.Any(x => x.After == cap),
-            };
+        if (shifts.Count > 0) brief["dates"] = DatesBrief(shifts, datesReason!, a.SettleForDate);
         if (settleChoice)
         {
             brief["choice"] = new JsonArray(DateProposals.SettleOptions.Select(o => (JsonNode)o).ToArray());
             if (!string.IsNullOrWhiteSpace(a.SettleForPicture)) brief["settle_for_picture"] = a.SettleForPicture;
         }
-        return new ProgressNote(say, brief, shifts, datesReason, settleChoice);
+        return new ProgressNote(say, brief, shifts, datesReason, settleChoice, reading);
     }
 
     private const int MonthlyAfterDays = 28;
