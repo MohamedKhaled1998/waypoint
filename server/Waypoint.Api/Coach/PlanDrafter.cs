@@ -32,7 +32,23 @@ public sealed class PlanDrafter(WaypointDb db, JobQueue jobs, ICoachModelClient 
         var handOff = JsonNode.Parse(interview.HandOffJson!)!.AsObject();
         var brief = BriefFor(today, start, slots, user, handOff);
         var otherAnchors = await OtherAnchorsAsync(aspirationId, ct);
-        await DraftFromAsync(aspiration, brief, CoachCallKind.Plan, PlanPrompt.System, "first_plan", slots, start, now, otherAnchors, ct);
+        // An Aspiration whose current Plan is a maintenance Plan is in a new chapter: its habits (in maintenance) go to the Coach as they are.
+        var current = await db.PlanVersions.FirstOrDefaultAsync(p => p.AspirationId == aspirationId && p.Status == PlanVersionStatus.Approved, ct);
+        if (current is not { Reason: AspirationLifecycle.MaintenanceReason })
+        {
+            await DraftFromAsync(aspiration, brief, CoachCallKind.Plan, PlanPrompt.System, "first_plan", slots, start, now, otherAnchors, ct);
+            return;
+        }
+        var slotLabels = slots.ToDictionary(s => s.Id, s => s.Label);
+        brief["current_plan"] = new JsonObject
+        {
+            ["habits"] = new JsonArray((await db.Habits.Where(h => h.PlanVersionId == current.Id).OrderBy(h => h.Title).ToListAsync(ct)).Select(h => (JsonNode)new JsonObject
+            {
+                ["title"] = h.Title, ["times_per_week"] = h.TimesPerWeek, ["minutes"] = h.Minutes,
+                ["slots"] = new JsonArray(h.SlotIds.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(id => (JsonNode)slotLabels.GetValueOrDefault(Guid.Parse(id), "")).ToArray()),
+            }).ToArray()),
+        };
+        await DraftFromAsync(aspiration, brief, CoachCallKind.Plan, PlanPrompt.System + PlanPrompt.NewChapter, AspirationLifecycle.NewChapterReason, slots, start, now, otherAnchors, ct);
     }
 
     /// <summary>A Re-plan the user asked for in chat: the Coach redraws the Plan around what they said, and it waits as a proposal.</summary>

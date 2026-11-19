@@ -1,5 +1,7 @@
 /** What the server says about progress. Pace, Projections and states are decided there; the phone only words them. */
 
+import type { Consistency, LifecycleStatus } from '../lifecycle/lifecycle';
+
 export type PartOfMonth = { part: 'early' | 'mid' | 'late'; month: number };
 
 export type Projection =
@@ -40,6 +42,9 @@ export type AspirationProgress = {
   pace: number | null;
   paceWords: 'none' | 'full' | 'steady' | 'easing' | 'light';
   state: ProgressState;
+  status?: LifecycleStatus;
+  /** Maintenance only: weeks kept up, shown instead of a Projection. */
+  consistency?: Consistency | null;
   settleChoice: SettleChoice | null;
   milestonesReached: number;
   milestonesTotal: number;
@@ -55,7 +60,11 @@ export type WeekCard = {
   aspirations: { aspirationId: string; shortName: string; hue: 'coral' | 'teal' | 'amber'; plannedMinutes: number; doneMinutes: number }[];
 };
 
-export type ProgressView = { thisWeek: WeekCard; lastWeek: WeekCard; aspirations: AspirationProgress[] };
+export type MaintenanceRow = { aspirationId: string; shortName: string; hue: 'coral' | 'teal' | 'amber'; consistency: Consistency };
+
+export type ClosedRow = { aspirationId: string; shortName: string; hue: 'coral' | 'teal' | 'amber' };
+
+export type ProgressView = { thisWeek: WeekCard; lastWeek: WeekCard; aspirations: AspirationProgress[]; maintenance: MaintenanceRow[]; closed?: ClosedRow[] };
 
 type T = (key: string, values?: Record<string, string | number>) => string;
 

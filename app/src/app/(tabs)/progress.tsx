@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet } from 'react-native-unistyles';
 import { useUnfinishedInterview } from '../../interview/useInterview';
+import { consistencyLine } from '../../lifecycle/lifecycle';
 import { settleOffer, stepFractions } from '../../progress/progress';
 import { ProjectionText, StatePill, StepBar, WeekCardView } from '../../progress/ProgressParts';
 import { useProgress } from '../../progress/useProgress';
@@ -29,7 +30,7 @@ export default function ProgressScreen() {
   const full = plans.length >= MAX_ASPIRATIONS;
 
   if (!value) return <EmptyState title={failed ? t('progress.loadFailed') : t('common.loading')} body="" />;
-  if (value.aspirations.length === 0)
+  if (value.aspirations.length === 0 && (value.maintenance ?? []).length === 0 && (value.closed ?? []).length === 0)
     return (
       <View style={styles.empty}>
         <EmptyState title={t('progress.emptyTitle')} body={t('progress.emptyBody')} />
@@ -104,6 +105,31 @@ export default function ProgressScreen() {
           </Card>
         </Pressable>
       ))}
+      {(value.maintenance ?? []).length > 0 ? (
+        <View style={styles.aspiration}>
+          <Text variant="label">{t('progress.maintenanceSection')}</Text>
+          {value.maintenance.map((m) => (
+            <Pressable key={m.aspirationId} accessibilityRole="button" onPress={() => router.push({ pathname: '/aspiration/[id]', params: { id: m.aspirationId } })}>
+              <Card hue={m.hue} style={styles.aspiration}>
+                <Text variant="heading">{m.shortName}</Text>
+                <Text muted>{consistencyLine(m.consistency, t)}</Text>
+              </Card>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+      {(value.closed ?? []).length > 0 ? (
+        <View style={styles.aspiration}>
+          <Text variant="label">{t('progress.historySection')}</Text>
+          {(value.closed ?? []).map((c) => (
+            <Pressable key={c.aspirationId} accessibilityRole="button" onPress={() => router.push({ pathname: '/aspiration/[id]', params: { id: c.aspirationId } })}>
+              <Card hue={c.hue} style={styles.aspiration}>
+                <Text variant="heading">{c.shortName}</Text>
+              </Card>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
     </ScrollView>
   );
 }

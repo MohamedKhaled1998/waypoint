@@ -217,7 +217,8 @@ public sealed partial class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, Pr
         var made = new List<PlanVersion>();
         foreach (var aspiration in planned)
         {
-            var note = await JudgeAsync(aspiration, start, now, refresh.Id, ct);
+            // Maintenance has no Milestones and no Projection: its habits carry on, and nothing is judged or proposed about dates.
+            var note = aspiration.Status == AspirationLifecycle.Maintenance ? null : await JudgeAsync(aspiration, start, now, refresh.Id, ct);
             made.Add(await ProposeAsync(aspiration, currents.First(p => p.AspirationId == aspiration.Id), slots, used, start, now, refresh.Id, pauses, ct, note: note));
         }
 
@@ -231,7 +232,7 @@ public sealed partial class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, Pr
         jobs.Add(JobKinds.RefreshApply, refresh.UserId, ids, delay: WeeklyRefreshes.AutoApplyAfter);
         if (made.Count > 0) jobs.Add(JobKinds.RefreshPrompt, refresh.UserId, ids);
         // A Measure is read about every four weeks: the Coach asks in chat, and the reply is saved as a reading.
-        foreach (var a in planned)
+        foreach (var a in planned.Where(a => a.Status != AspirationLifecycle.Maintenance))
         {
             var current = currents.First(p => p.AspirationId == a.Id);
             if (!await db.Milestones.AnyAsync(m => m.PlanVersionId == current.Id && m.MeasureName != null, ct)) continue;
@@ -251,7 +252,7 @@ public sealed partial class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, Pr
         var start = DateOnly.FromDateTime(now).AddDays(1);
         var slots = await db.Slots.ToDictionaryAsync(s => s.Id, ct);
 
-        var aspirations = (await db.Aspirations.Where(a => a.Status == "active").ToListAsync(ct))
+        var aspirations = (await db.Aspirations.Where(a => a.Status == "active" || a.Status == AspirationLifecycle.Maintenance).ToListAsync(ct))
             .OrderBy(a => a.SettleForDate ?? DateOnly.MaxValue).ThenBy(a => a.CreatedAt).ToList(); // the one closest to slipping gets the contested Slot
         var currents = await db.PlanVersions.Where(p => p.Status == PlanVersionStatus.Approved).ToListAsync(ct);
         var pauses = await db.Pauses.ToListAsync(ct);

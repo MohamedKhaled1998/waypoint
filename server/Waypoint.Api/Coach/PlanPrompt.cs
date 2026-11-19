@@ -84,6 +84,16 @@ public static class PlanPrompt
         apply, and Milestone dates stay put unless the change cannot work without moving them.
         """;
 
+    /// <summary>Added to the Plan prompt for the next chapter of an Aspiration that was in maintenance.</summary>
+    public const string NewChapter = """
+
+
+        ## This is a new chapter
+        The user kept this Aspiration up in maintenance and has now done a short Interview for what comes next. Chart new
+        Milestones toward the new Hoped-for date from where they stand now. Their maintenance habits are in "current_plan":
+        keep what still fits and change what the new chapter needs. It is a proposal the user approves.
+        """;
+
     public static string Rejected(IEnumerable<string> problems) =>
         "[The app rejected this Plan: " + string.Join(", ", problems) +
         ". Reply again with the corrected Plan as one fenced json block and nothing else.]";

@@ -1,9 +1,12 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Alert, Pressable, ScrollView, View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet } from 'react-native-unistyles';
+import { useSession } from '../../auth/SessionProvider';
 import { buildHabits, type DotState, type HabitRow } from '../../aspiration/habits';
+import { httpLifecycleApi } from '../../lifecycle/api';
+import { confirmFor, consistencyLine, menuItems, type MenuItem, type Work } from '../../lifecycle/lifecycle';
 import { progressRows } from '../../pause/pause';
 import { usePauses } from '../../pause/usePauses';
 import { usePlanSummaries } from '../../plan/usePlan';
@@ -29,17 +32,46 @@ export default function AspirationScreen() {
   const { t, i18n } = useTranslation();
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const session = useSession();
   const { value: a, failed } = useAspirationProgress(id);
   const [tab, setTab] = useState<(typeof tabs)[number]>('route');
   const { plans } = usePlanSummaries();
   const paused = usePauses(plans);
-  const [menu, setMenu] = useState<'closed' | 'open' | 'days'>('closed');
+  const [menu, setMenu] = useState<'closed' | 'open' | 'pause' | 'days'>('closed');
   const row = progressRows(plans, paused.state).find((r) => r.aspirationId === id);
   const { actions, setHabitReminder } = useToday();
   const today = localNow().date;
   if (!a) return <EmptyState title={failed ? t('progress.loadFailed') : t('common.loading')} body="" />;
   const date = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString(i18n.language, { day: 'numeric', month: 'long', year: 'numeric' });
   const habits = buildHabits(actions, id ?? '', today);
+  const status = a.status ?? 'active';
+  const api = httpLifecycleApi(session);
+  const run = (work: Work, then: () => void) => {
+    setMenu('closed');
+    work().then(then, () => Alert.alert(t('lifecycle.failed')));
+  };
+  // Each choice asks first where it changes or ends something; Delete suggests Pause instead and can't be undone.
+  const pick = (item: MenuItem) => {
+    const name = a.shortName;
+    const confirm = confirmFor(item, Boolean(row?.paused) || status === 'closed');
+    const act = (choice: string) => {
+      if (item === 'move_to_maintenance') run(() => api.moveToMaintenance(id), () => router.replace('/(tabs)/progress'));
+      else if (item === 'mark_reached') run(() => api.markReached(id, choice === 'keepUp'), () => router.replace('/(tabs)/progress'));
+      else if (item === 'delete') run(() => api.remove(id), () => router.replace('/(tabs)/progress'));
+    };
+    if (item === 'pause') setMenu('pause');
+    else if (item === 'resume') row?.paused && void paused.resume(row.paused.pauseId);
+    else if (item === 'new_chapter') run(() => api.newChapter(id), () => router.push('/interview'));
+    else if (confirm)
+      Alert.alert(t(`${confirm.prefix}.title`, { name }), t(`${confirm.prefix}.body`, { name }), [
+        { text: t('common.close'), style: 'cancel' },
+        ...confirm.choices.map((choice) => ({
+          text: t(`${confirm.prefix}.${choice}`),
+          style: confirm.destructive && choice === 'confirm' ? ('destructive' as const) : ('default' as const),
+          onPress: () => (choice === 'pauseInstead' ? setMenu('pause') : act(choice)),
+        })),
+      ]);
+  };
   const start = (until: Parameters<typeof paused.start>[1]) => {
     setMenu('closed');
     void paused.start({ aspirationId: id }, until);
@@ -50,7 +82,7 @@ export default function AspirationScreen() {
       <Stack.Screen
         options={{
           title: a.shortName,
-          headerRight: () => <HeaderButton icon="ellipsis-horizontal" label={t('pause.menu')} onPress={() => setMenu(menu === 'closed' ? 'open' : 'closed')} />,
+          headerRight: () => <HeaderButton icon="ellipsis-horizontal" label={t('lifecycle.menu')} onPress={() => setMenu(menu === 'closed' ? 'open' : 'closed')} />,
         }}
       />
       {row?.paused ? (
@@ -59,10 +91,19 @@ export default function AspirationScreen() {
           <Button title={t('pause.resume')} onPress={() => void paused.resume(row.paused!.pauseId)} />
         </Card>
       ) : null}
-      {menu !== 'closed' && !row?.paused ? (
+      {menu === 'open' ? (
+        <Card>
+          <View style={styles.menu}>
+            {menuItems(status, Boolean(row?.paused)).map((item) => (
+              <Button key={item} kind="secondary" title={t(`lifecycle.items.${item}`)} onPress={() => pick(item)} />
+            ))}
+          </View>
+        </Card>
+      ) : null}
+      {menu === 'pause' || menu === 'days' ? (
         <Card>
           <Text variant="label">{t('pause.menuTitle', { name: a.shortName })}</Text>
-          {menu === 'open' ? (
+          {menu === 'pause' ? (
             <View style={styles.menu}>
               <Button kind="secondary" title={t('pause.scopeToday')} onPress={() => start('today')} />
               <Button kind="secondary" title={t('pause.scopeFewDays')} onPress={() => setMenu('days')} />
@@ -83,11 +124,19 @@ export default function AspirationScreen() {
         {a.settleForDate ? <Text muted>{t('progress.settle', { date: date(a.settleForDate) })}</Text> : null}
         <Text>{t(`progress.paceWords.${a.paceWords}`)}</Text>
       </Card>
-      <Card style={styles.stand}>
-        <Text variant="label">{t('progress.whereYouStand')}</Text>
-        <Text>{t(`progress.standing.${a.state}`)}</Text>
-        <StatePill state={a.state} />
-      </Card>
+      {status === 'closed' ? null : a.consistency ? (
+        <Card style={styles.stand}>
+          <Text variant="label">{t('lifecycle.consistencyTitle')}</Text>
+          <Text>{consistencyLine(a.consistency, t)}</Text>
+          <Text muted>{t('lifecycle.maintenanceLine')}</Text>
+        </Card>
+      ) : (
+        <Card style={styles.stand}>
+          <Text variant="label">{t('progress.whereYouStand')}</Text>
+          <Text>{t(`progress.standing.${a.state}`)}</Text>
+          <StatePill state={a.state} />
+        </Card>
+      )}
       {settleOffer(a) ? <SettleCard choice={a.settleChoice!} onPick={(option) => router.push(coachRoute(a.aspirationId, a.shortName, option))} /> : null}
       <View style={styles.tabs}>
         {tabs.map((name) => (

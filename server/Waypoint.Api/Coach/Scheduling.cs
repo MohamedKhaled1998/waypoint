@@ -83,7 +83,7 @@ public static class Scheduling
     /// </summary>
     public static async Task ResolveAsync(WaypointDb db, Guid aspirationId, DateOnly from, List<ScheduledAction> added, CancellationToken ct)
     {
-        var active = await db.Aspirations.Where(a => a.Status == "active").ToListAsync(ct);
+        var active = await db.Aspirations.Where(a => a.Status == "active" || a.Status == AspirationLifecycle.Maintenance).ToListAsync(ct);
         var activeIds = active.Select(a => a.Id).ToList();
         var others = await db.ScheduledActions.Where(a => a.AspirationId != aspirationId && a.Date >= from && activeIds.Contains(a.AspirationId)).ToListAsync(ct);
         var kept = await db.ScheduledActions.Where(a => a.AspirationId == aspirationId && a.Date >= from

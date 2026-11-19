@@ -126,6 +126,7 @@ app.MapPlans();
 app.MapWeeklyRefreshes();
 app.MapProgress();
 app.MapAspirationProgress();
+app.MapAspirationLifecycle();
 app.MapMilestones();
 app.MapMeasures();
 app.MapCheckIns();

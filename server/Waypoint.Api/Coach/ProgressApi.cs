@@ -15,17 +15,26 @@ public static class ProgressApi
             var aspirations = await db.Aspirations.Where(a => a.Status == "active").OrderBy(a => a.CreatedAt).ToListAsync(ct);
             var views = new List<object>();
             foreach (var a in aspirations) views.Add(View(await calc.ComputeAsync(a, calc.Start, ct)));
+            var maintenance = new List<object>();
+            foreach (var a in await db.Aspirations.Where(a => a.Status == AspirationLifecycle.Maintenance).OrderBy(a => a.CreatedAt).ToListAsync(ct))
+                maintenance.Add(new { AspirationId = a.Id, a.ShortName, a.Hue, Consistency = await calc.ConsistencyAsync(a.Id, calc.Start, ct) });
+            // Closed ones are history: listed so they can be opened, and deleted.
+            var closed = (await db.Aspirations.Where(a => a.Status == AspirationLifecycle.Closed).OrderBy(a => a.CreatedAt).ToListAsync(ct))
+                .Select(a => (object)new { AspirationId = a.Id, a.ShortName, a.Hue }).ToList();
             return Results.Ok(new
             {
+                Closed = closed,
                 ThisWeek = await WeekCardAsync(db, calc, aspirations, 0, ct),
                 LastWeek = await WeekCardAsync(db, calc, aspirations, 1, ct),
                 Aspirations = views,
+                Maintenance = maintenance,
             });
         });
 
         g.MapGet("/{aspirationId:guid}", async (Guid aspirationId, WaypointDb db, ProgressCalculator calc, CancellationToken ct) =>
-            await db.Aspirations.FirstOrDefaultAsync(a => a.Id == aspirationId && a.Status != "closed", ct) is { } a
-                ? Results.Ok(View(await calc.ComputeAsync(a, calc.Start, ct))) : Results.NotFound());
+            await db.Aspirations.FirstOrDefaultAsync(a => a.Id == aspirationId, ct) is { } a
+                ? Results.Ok(View(await calc.ComputeAsync(a, calc.Start, ct), a.Status != "active" ? await calc.ConsistencyAsync(a.Id, calc.Start, ct) : null))
+                : Results.NotFound());
     }
 
     private static object? Words(Projected? p, bool tooEarly)
@@ -43,9 +52,11 @@ public static class ProgressApi
         };
     }
 
-    private static object View(AspirationProgress p)
+    private static object View(AspirationProgress p, Consistency? consistency = null)
     {
         var a = p.Aspiration;
+        // Maintenance has no Milestones and no Projection: only consistency.
+        if (consistency is not null) p = p with { Milestones = [], Next = null, NextProjection = null, FinalProjection = null, Latest = null };
         var state = p.Latest?.State ?? ProgressStates.TooEarly;
         var tooEarly = p.TooEarly;
         var final = p.Milestones.Count > 0 ? p.Milestones[^1] : null;
@@ -70,6 +81,7 @@ public static class ProgressApi
             HasPlan = p.Current is not null, PlanVersionId = p.Current?.Id, PlanNumber = p.Current?.Number, ShareHoursPerWeek = a.ShareHoursPerWeek,
             Pace = p.Pace, PaceWords = ProgressMath.PaceWords(p.Pace),
             State = state,
+            Status = a.Status, Consistency = consistency,
             // Past Settle-for: the honest choice, for the calm card on the Aspiration screen and the muted line on Progress.
             SettleChoice = state == ProgressStates.PastSettleFor ? new { Options = DateProposals.SettleOptions, HasPicture = !string.IsNullOrWhiteSpace(a.SettleForPicture) } : null,
             MilestonesReached = p.Milestones.Count(m => m.State == "reached"),

@@ -114,6 +114,9 @@ public sealed record AspirationProgress(
     public bool TooEarly => Latest is null || Latest.State == ProgressStates.TooEarly;
 }
 
+/// <summary>Maintenance: how many of the last weeks the habits were kept up (mostly done).</summary>
+public sealed record Consistency(int WeeksKeptUp, int OfWeeks);
+
 public sealed class ProgressCalculator(WaypointDb db, TimeProvider clock)
 {
     public DateOnly Today => DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
@@ -139,6 +142,13 @@ public sealed class ProgressCalculator(WaypointDb db, TimeProvider clock)
             var week = rows.Where(r => r.Date >= lo && r.Date < lo.AddDays(7)).Where(r => r.State is not null || r.Date <= passed).ToList();
             return new WeekScore(back, week.Sum(r => r.Minutes), week.Sum(r => Done(r)));
         }).ToList();
+    }
+
+    /// <summary>Weeks kept up of the last <see cref="AspirationLifecycle.ConsistencyWeeks"/>: a week counts when it was mostly done, as the refresh judges it.</summary>
+    public async Task<Consistency> ConsistencyAsync(Guid aspirationId, DateOnly start, CancellationToken ct)
+    {
+        var weeks = await WeeksAsync(aspirationId, start, AspirationLifecycle.ConsistencyWeeks, ct);
+        return new Consistency(weeks.Count(w => w.Planned > 0 && w.Done >= WeeklyRefreshes.MostlyDone * w.Planned), AspirationLifecycle.ConsistencyWeeks);
     }
 
     private static int Done(Row r) => r.State switch

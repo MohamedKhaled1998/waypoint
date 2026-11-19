@@ -212,7 +212,7 @@ public static class Plans
     /// Every version after the first Plan lays out its window anew, from its start on, keeping only Actions already checked in.
     /// Date proposals carry no window of their own, so they leave the scheduled Actions alone.
     /// </summary>
-    private static bool RollsWindow(string reason) => reason is not ("first_plan" or DateProposals.Later or DateProposals.Earlier);
+    private static bool RollsWindow(string reason) => reason is not ("first_plan" or AspirationLifecycle.MaintenanceReason or DateProposals.Later or DateProposals.Earlier);
 
     private static int LeadFrom(JsonObject a)
     {

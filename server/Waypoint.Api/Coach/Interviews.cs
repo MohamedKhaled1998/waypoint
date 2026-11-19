@@ -52,7 +52,7 @@ public static class Interviews
         }).RequireAuthorization();
     }
 
-    private static async Task<object> ViewAsync(WaypointDb db, Interview i, CancellationToken ct)
+    internal static async Task<object> ViewAsync(WaypointDb db, Interview i, CancellationToken ct)
     {
         var messages = await db.InterviewMessages.Where(m => m.InterviewId == i.Id).OrderBy(m => m.Seq)
             .Select(m => new { m.Id, m.Role, m.Text, m.ClientId }).ToListAsync(ct);
@@ -162,7 +162,10 @@ public static class Interviews
             var turns = new List<CoachTurn> { new("user", interview.OwnWords) };
             turns.AddRange(stored.Select(m => new CoachTurn(m.Role == "user" ? "user" : "assistant", m.Text)));
             if (instruction is not null) turns.Add(new CoachTurn("user", instruction));
-            var system = InterviewPrompt.For(isFirst);
+            var chapter = await IsChapterAsync(db, interview, ct);
+            var system = InterviewPrompt.For(isFirst) + (chapter ? InterviewPrompt.ChapterAddendum : "");
+            if (chapter && await EarlierHandOffAsync(db, interview, ct) is { } earlier)
+                turns.Insert(1, new CoachTurn("assistant", "[What the earlier Interview found: " + earlier + "]"));
 
             string? visible = null;
             JsonNode? handOff = null;
@@ -228,6 +231,16 @@ public static class Interviews
         }
     }
 
+    /// <summary>A new chapter is an unconfirmed Interview on an Aspiration that is in maintenance; any other Interview makes a new Aspiration.</summary>
+    private static async Task<bool> IsChapterAsync(WaypointDb db, Interview interview, CancellationToken ct) =>
+        interview.AspirationId is { } aspirationId && interview.Status != InterviewStatus.Confirmed
+        && await db.Aspirations.AnyAsync(a => a.Id == aspirationId && a.Status == AspirationLifecycle.Maintenance, ct);
+
+    /// <summary>The Aspiration as the Interview before this chapter left it, for the Coach only (never logged).</summary>
+    private static async Task<string?> EarlierHandOffAsync(WaypointDb db, Interview chapter, CancellationToken ct) =>
+        await db.Interviews.Where(i => i.AspirationId == chapter.AspirationId && i.Id != chapter.Id && i.Status == InterviewStatus.Confirmed && i.HandOffJson != null)
+            .OrderByDescending(i => i.CreatedAt).Select(i => i.HandOffJson).FirstOrDefaultAsync(ct);
+
     private static async Task<IResult> Confirm(Guid id, ConfirmInterviewRequest req, WaypointDb db, CurrentUser me, JobQueue jobs, TimeProvider clock, CancellationToken ct)
     {
         var interview = await db.Interviews.FirstOrDefaultAsync(x => x.Id == id, ct);
@@ -244,6 +257,8 @@ public static class Interviews
         if (problems.Count > 0) return Results.UnprocessableEntity(new { error = "invalid_hand_off", problems });
         if (await db.Aspirations.CountAsync(a => a.Status == "active", ct) >= MaxActiveAspirations)
             return Results.Conflict(new { error = "too_many_active_aspirations" });
+
+        if (await IsChapterAsync(db, interview, ct) && interview.AspirationId is { } chapterOf) return await ConfirmChapterAsync(interview, chapterOf, handOff!, shortName, db, jobs, now, ct);
 
         var a = handOff!["aspiration"]!.AsObject();
         var used = await db.Aspirations.Where(x => x.Status == "active").Select(x => x.Hue).ToListAsync(ct);
@@ -296,6 +311,29 @@ public static class Interviews
             AspirationId = aspiration.Id, Card = "interview_summary", CardJson = card.ToJsonString(), CreatedAt = now,
         });
         jobs.Add(JobKinds.Plan, user.Id, new Dictionary<string, Guid> { ["aspirationId"] = aspiration.Id }, aspiration.Id);
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(new { aspirationId = aspiration.Id, aspiration.ShortName, aspiration.Hue });
+    }
+
+    /// <summary>
+    /// A new chapter confirmed: the Aspiration is active again with the dates, share and Settle-for of this Interview, and a Plan draft
+    /// is queued. Its habits go on as they are until the user approves the new Plan.
+    /// </summary>
+    private static async Task<IResult> ConfirmChapterAsync(Interview interview, Guid aspirationId, JsonNode handOff, string? shortName, WaypointDb db, JobQueue jobs, DateTime now, CancellationToken ct)
+    {
+        var aspiration = await db.Aspirations.FirstOrDefaultAsync(x => x.Id == aspirationId, ct);
+        if (aspiration is null || aspiration.Status != AspirationLifecycle.Maintenance) return Results.Conflict(new { error = "not_in_maintenance" });
+        var a = handOff["aspiration"]!.AsObject();
+        var settleDate = HandOff.Str(a, "settle_for_date");
+        if (shortName is not null) aspiration.ShortName = shortName;
+        aspiration.Status = "active";
+        aspiration.ShareHoursPerWeek = HandOff.Num(a, "share_hours_per_week")!.Value;
+        aspiration.HopedForDate = DateOnly.ParseExact(HandOff.Str(a, "hoped_for_date")!, "yyyy-MM-dd");
+        aspiration.SettleForDate = string.IsNullOrWhiteSpace(settleDate) ? null : DateOnly.ParseExact(settleDate, "yyyy-MM-dd");
+        aspiration.SettleForPicture = string.IsNullOrWhiteSpace(HandOff.Str(a, "settle_for_picture")) ? null : HandOff.Str(a, "settle_for_picture");
+        aspiration.OnSkip = HandOff.Str(a, "on_skip")!;
+        interview.Status = InterviewStatus.Confirmed;
+        jobs.Add(JobKinds.Plan, aspiration.UserId, new Dictionary<string, Guid> { ["aspirationId"] = aspiration.Id }, aspiration.Id);
         await db.SaveChangesAsync(ct);
         return Results.Ok(new { aspirationId = aspiration.Id, aspiration.ShortName, aspiration.Hue });
     }

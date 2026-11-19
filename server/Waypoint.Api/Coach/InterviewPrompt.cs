@@ -86,6 +86,16 @@ public static class InterviewPrompt
         "user" object out of the hand-off block.
         """;
 
+    public const string ChapterAddendum = """
+
+        ## This is a new chapter
+        The user already has this Aspiration and has kept its habits up in maintenance. This is a short Interview for the
+        next chapter, not a new Aspiration: what you found earlier is in the first assistant turn. Do not ask again what
+        you already know. Ask only what the next chapter needs: what comes next and what "done" looks like for it, what
+        has changed in their life or time, and the new Hoped-for date and Settle-for. Aim for about three to five of your
+        turns. Fill the hand-off block in full, carrying over what has not changed.
+        """;
+
     public static string For(bool firstInterview) => Base + (firstInterview ? FirstInterviewAddendum : LaterInterviewAddendum);
 
     public const string Resume =
