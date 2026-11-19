@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Waypoint.Api.Coach;
 using Waypoint.Api.Data;
@@ -104,6 +105,7 @@ public abstract class PlanTestBase(WaypointApiFactory factory)
 
     protected async Task<(HttpClient Client, Guid UserId, Guid InterviewId, Guid AspirationId)> ConfirmedAsync(JsonObject? handOff = null)
     {
+        await ClearPushJobsAsync();
         var (c, userId) = await SignedInAsync();
         factory.Coach.Fail = false;
         var created = await c.PostAsJsonAsync("/interviews", new { ownWords = "run a half marathon" });
@@ -114,6 +116,15 @@ public abstract class PlanTestBase(WaypointApiFactory factory)
         confirm.EnsureSuccessStatusCode();
         var aspirationId = (await confirm.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("aspirationId").GetGuid();
         return (c, userId, id, aspirationId);
+    }
+
+    /// <summary>Earlier tests in the class share the database: their unsent push jobs would add to this test's job counts.</summary>
+    private async Task ClearPushJobsAsync()
+    {
+        using var scope = factory.Services.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<WaypointDb>().Jobs.IgnoreQueryFilters()
+            .Where(j => j.Kind == JobKinds.PushMessage && j.State == JobState.Pending)
+            .ExecuteUpdateAsync(s => s.SetProperty(j => j.State, JobState.Done));
     }
 
     protected Task<int> RunJobsAsync() => factory.Services.GetRequiredService<JobRunner>().RunDueAsync(CancellationToken.None);
@@ -127,6 +138,7 @@ public abstract class PlanTestBase(WaypointApiFactory factory)
     {
         Script(plan ?? Plan());
         Assert.True(await RunJobsAsync() >= 1); // reminder jobs from earlier approvals may run too
+        await RunJobsAsync(); // the "Plan ready" push job the draft queued
         var p = await PlansAsync(c, aspirationId);
         return p.GetProperty("pendingVersionId").GetGuid();
     }

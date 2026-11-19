@@ -10,4 +10,3 @@ dist/
 .sandcastle-*.md
 secrets/
 app/google-services.json
-.DS_Store

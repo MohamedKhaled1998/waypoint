@@ -7,6 +7,7 @@ using Microsoft.Extensions.Time.Testing;
 using Testcontainers.MySql;
 using Waypoint.Api.Auth;
 using Waypoint.Api.Coach;
+using Waypoint.Api.Push;
 
 namespace Waypoint.Api.Tests.Support;
 
@@ -16,6 +17,7 @@ public sealed class WaypointApiFactory : WebApplicationFactory<Program>, IAsyncL
     private readonly MySqlContainer _mysql = new MySqlBuilder("mysql:8.0").Build();
 
     public FakeCoachModelClient Coach { get; } = new();
+    public FakePushSender Push { get; } = new();
     public CapturedLogs Logs { get; } = new();
 
     public FakeTimeProvider Clock { get; } = new(new DateTimeOffset(2026, 1, 5, 9, 0, 0, TimeSpan.Zero));
@@ -41,6 +43,10 @@ public sealed class WaypointApiFactory : WebApplicationFactory<Program>, IAsyncL
             services.AddSingleton<IGoogleTokenVerifier, FakeGoogleVerifier>();
             services.RemoveAll<ICoachModelClient>();
             services.AddSingleton<ICoachModelClient>(Coach);
+            // No service-account file in tests: the fake sender replaces FCM and its start-up check.
+            services.RemoveAll<Microsoft.Extensions.Options.IValidateOptions<FirebaseOptions>>();
+            services.RemoveAll<IPushSender>();
+            services.AddSingleton<IPushSender>(Push);
             services.AddSingleton<ILoggerProvider>(Logs);
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<TimeProvider>(Clock);

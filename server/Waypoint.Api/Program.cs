@@ -5,6 +5,7 @@ using Microsoft.IdentityModel.Tokens;
 using Waypoint.Api.Auth;
 using Waypoint.Api.Coach;
 using Waypoint.Api.Data;
+using Waypoint.Api.Push;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -21,6 +22,14 @@ builder.Services.AddSingleton<IGoogleTokenVerifier, GoogleTokenVerifier>();
 builder.Services.Configure<CoachOptions>(builder.Configuration.GetSection("Coach"));
 builder.Services.Configure<AnthropicOptions>(builder.Configuration.GetSection("Anthropic"));
 builder.Services.AddHttpClient<ICoachModelClient, AnthropicCoachModelClient>(c => c.Timeout = TimeSpan.FromMinutes(2));
+
+builder.Services.AddOptions<FirebaseOptions>().Bind(builder.Configuration.GetSection("Firebase"))
+    .Validate(o => !string.IsNullOrWhiteSpace(o.ServiceAccountFile) && CanRead(o.ServiceAccountFile),
+        "Firebase:ServiceAccountFile must name a readable service-account JSON file.")
+    .ValidateOnStart();
+builder.Services.AddSingleton<IPushSender, FirebasePushSender>();
+builder.Services.AddScoped<PushNotifier>();
+builder.Services.AddScoped<CoachMessenger>();
 
 builder.Services.AddScoped<JobQueue>();
 builder.Services.AddScoped<PlanDrafter>();
@@ -104,8 +113,15 @@ app.MapInterviews();
 app.MapPlans();
 app.MapCheckIns();
 app.MapSync();
+app.MapPushes();
 
 app.Run();
+
+static bool CanRead(string path)
+{
+    try { using var f = File.OpenRead(path); return true; }
+    catch (Exception) { return false; }
+}
 
 record SignInRequest(string? IdToken);
 record RefreshRequest(string? RefreshToken);

@@ -15,6 +15,7 @@ public sealed class WaypointDb(DbContextOptions<WaypointDb> options, CurrentUser
     public DbSet<InterviewMessage> InterviewMessages => Set<InterviewMessage>();
 
     public DbSet<Job> Jobs => Set<Job>();
+    public DbSet<Waypoint.Api.Push.DeviceToken> DeviceTokens => Set<Waypoint.Api.Push.DeviceToken>();
     public DbSet<PlanVersion> PlanVersions => Set<PlanVersion>();
     public DbSet<Milestone> Milestones => Set<Milestone>();
     public DbSet<Habit> Habits => Set<Habit>();
@@ -141,6 +142,14 @@ public sealed class WaypointDb(DbContextOptions<WaypointDb> options, CurrentUser
             e.HasIndex(m => m.InterviewId);
             e.HasOne<User>().WithMany().HasForeignKey(m => m.UserId);
             e.HasQueryFilter(m => m.UserId == CurrentUserId);
+        });
+
+        b.Entity<Waypoint.Api.Push.DeviceToken>(e =>
+        {
+            e.Property(t => t.Token).HasMaxLength(512);
+            e.HasIndex(t => new { t.UserId, t.Token }).IsUnique();
+            e.HasOne<User>().WithMany().HasForeignKey(t => t.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasQueryFilter(t => t.UserId == CurrentUserId);
         });
 
         b.Entity<Job>(e =>

@@ -26,6 +26,9 @@ services:
       Jwt__Key: ${JWT_KEY:?set JWT_KEY in .env (32+ random characters)}
       Google__ClientIds__0: ${GOOGLE_WEB_CLIENT_ID:?set GOOGLE_WEB_CLIENT_ID in .env}
       Anthropic__ApiKey: ${ANTHROPIC_API_KEY:-}
+      Firebase__ServiceAccountFile: /run/secrets/firebase-service-account.json
+    volumes:
+      - ./secrets:/run/secrets:ro
     ports:
       - "8080:8080"
 

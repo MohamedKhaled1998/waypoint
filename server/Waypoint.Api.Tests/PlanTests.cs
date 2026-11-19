@@ -28,7 +28,7 @@ public sealed class PlanTests(WaypointApiFactory factory) : PlanTestBase(factory
         Assert.Equal(JsonValueKind.Null, after.GetProperty("currentVersionId").ValueKind);
         Assert.Empty(await c.GetFromJsonAsync<JsonElement[]>("/scheduled-actions") ?? []);
 
-        var request = factory.Coach.Requests.Last();
+        var request = factory.Coach.Requests.Last(r => r.Kind == CoachCallKind.Plan);
         Assert.Equal(CoachCallKind.Plan, request.Kind);
 
         var proposal = await c.GetFromJsonAsync<JsonElement>($"/plan-versions/{versionId}");
@@ -120,6 +120,7 @@ public sealed class PlanTests(WaypointApiFactory factory) : PlanTestBase(factory
         Script(Plan());
         var calls = factory.Coach.Requests.Count;
         await RunJobsAsync();
+        await RunJobsAsync(); // the "Plan ready" push job
 
         Assert.Equal(2, factory.Coach.Requests.Count - calls);
         var second = factory.Coach.Requests.Last();
@@ -152,6 +153,7 @@ public sealed class PlanTests(WaypointApiFactory factory) : PlanTestBase(factory
         factory.Clock.Advance(TimeSpan.FromMinutes(5));
         Script(Plan());
         Assert.Equal(1, await RunJobsAsync());
+        await RunJobsAsync(); // leaves no "Plan ready" push job for the other tests
         Assert.NotEqual(JsonValueKind.Null, (await PlansAsync(c, aspirationId)).GetProperty("pendingVersionId").ValueKind);
     }
 
@@ -211,6 +213,7 @@ public sealed class PlanTests(WaypointApiFactory factory) : PlanTestBase(factory
         Assert.False(retrying.GetProperty("draftLate").GetBoolean());
         Script(Plan());
         Assert.Equal(1, await RunJobsAsync());
+        await RunJobsAsync(); // the "Plan ready" push job
         Assert.NotEqual(JsonValueKind.Null, (await PlansAsync(c, aspirationId)).GetProperty("pendingVersionId").ValueKind);
         Assert.Equal(HttpStatusCode.NotFound, (await c.PostAsync($"/aspirations/{Guid.NewGuid()}/plan-retry", null)).StatusCode);
     }

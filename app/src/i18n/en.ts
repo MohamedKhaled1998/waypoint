@@ -169,6 +169,9 @@ export const en = {
     failed: 'We could not sign you in. Please try again.',
     offline: 'Waypoint could not reach the server. Check your connection and try again.',
   },
+  push: {
+    channel: 'Coach',
+  },
   reminders: {
     channel: 'Reminders',
     done: 'Done',

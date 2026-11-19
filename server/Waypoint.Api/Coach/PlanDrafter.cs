@@ -12,7 +12,7 @@ namespace Waypoint.Api.Coach;
 /// A draft that breaks a rule goes back to the Coach once with the problem codes; if it still fails the job fails and
 /// is retried later. Runs as the job's user, so the query filter applies.
 /// </summary>
-public sealed class PlanDrafter(WaypointDb db, ICoachModelClient model, IOptions<CoachOptions> options, TimeProvider clock,
+public sealed class PlanDrafter(WaypointDb db, JobQueue jobs, ICoachModelClient model, IOptions<CoachOptions> options, TimeProvider clock,
     ILogger<PlanDrafter> log)
 {
     public async Task DraftAsync(Guid aspirationId, CancellationToken ct)
@@ -137,11 +137,14 @@ public sealed class PlanDrafter(WaypointDb db, ICoachModelClient model, IOptions
         version.TwoWeeksJson = window.ToJsonString();
 
         var card = new JsonObject { ["planVersionId"] = version.Id, ["aspirationId"] = aspiration.Id, ["shortName"] = aspiration.ShortName, ["hue"] = aspiration.Hue };
-        db.ChatMessages.Add(new ChatMessage
+        var proposal = new ChatMessage
         {
             Id = Guid.NewGuid(), UserId = aspiration.UserId, Role = "coach", Text = version.Rationale,
             AspirationId = aspiration.Id, Card = "proposal", CardJson = card.ToJsonString(), CreatedAt = now,
-        });
+        };
+        db.ChatMessages.Add(proposal);
+        // "Plan ready" goes out as its own job, so a push failure never redrafts the Plan.
+        jobs.Add(JobKinds.PushMessage, aspiration.UserId, new Dictionary<string, Guid> { ["chatMessageId"] = proposal.Id }, aspiration.Id);
         await db.SaveChangesAsync(ct);
         log.LogInformation("Plan version {PlanVersionId} proposed for Aspiration {AspirationId}", version.Id, aspiration.Id);
     }

@@ -10,6 +10,7 @@ public static class JobKinds
     public const string Plan = "plan";
     public const string CheckInReply = "check_in_reply";
     public const string ReminderText = "reminder_text";
+    public const string PushMessage = "push_message";
 }
 
 /// <summary>Adds jobs. Payloads are row IDs only, so no free text can reach the jobs table.</summary>
@@ -79,6 +80,9 @@ public sealed class JobRunner(IServiceScopeFactory scopes, TimeProvider clock, I
                     break;
                 case JobKinds.ReminderText:
                     await sp.GetRequiredService<ReminderWriter>().WriteAsync(ids["planVersionId"], ct);
+                    break;
+                case JobKinds.PushMessage:
+                    await sp.GetRequiredService<Waypoint.Api.Push.PushNotifier>().SendForMessageAsync(ids["chatMessageId"], ct);
                     break;
                 default:
                     throw new InvalidOperationException("unknown_job_kind");

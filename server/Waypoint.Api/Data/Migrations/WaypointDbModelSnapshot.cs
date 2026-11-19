@@ -698,6 +698,31 @@ namespace Waypoint.Api.Data.Migrations
                     b.ToTable("Users");
                 });
 
+            modelBuilder.Entity("Waypoint.Api.Push.DeviceToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Token")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("varchar(512)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("char(36)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "Token")
+                        .IsUnique();
+
+                    b.ToTable("DeviceTokens");
+                });
+
             modelBuilder.Entity("Waypoint.Api.Data.Aspiration", b =>
                 {
                     b.HasOne("Waypoint.Api.Data.User", null)
@@ -870,6 +895,15 @@ namespace Waypoint.Api.Data.Migrations
                 });
 
             modelBuilder.Entity("Waypoint.Api.Data.Slot", b =>
+                {
+                    b.HasOne("Waypoint.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Waypoint.Api.Push.DeviceToken", b =>
                 {
                     b.HasOne("Waypoint.Api.Data.User", null)
                         .WithMany()
