@@ -129,6 +129,26 @@ export const en = {
     aspiration: 'Aspiration',
     loadFailed: 'Could not load Progress. Pull to try again.',
   },
+  measure: {
+    none: 'This Aspiration has no Measure.',
+    loadFailed: 'Could not load the Measure.',
+    noReadings: 'No readings yet.',
+    startAndHoped: 'Started at {{start}} {{unit}} · hoped for {{hopedFor}} {{unit}} by {{date}}',
+    checkOnThePlan: 'A check on the Plan, never a gate. Your Milestones do not wait on it.',
+    addReading: 'Add reading',
+    valuePlaceholder: 'Your reading',
+    save: 'Save reading',
+    saveFailed: 'Could not save the reading. Try again.',
+    trend: {
+      tooFew: 'Add one more reading to see a trend.',
+      up: 'Up {{amount}} {{unit}} since {{since}}',
+      down: 'Down {{amount}} {{unit}} since {{since}}',
+      same: 'No change since {{since}}',
+      rightWay: 'going the right way',
+      otherWay: 'going the other way',
+      steady: 'holding steady',
+    },
+  },
   coach: {
     emptyTitle: 'Your Coach is here when you are ready',
     emptyBody: 'Say hello below. Conversations with your Coach will appear here.',
@@ -270,5 +290,5 @@ export const en = {
       },
     },
   },
-  common: { loading: 'Loading…' },
+  common: { loading: 'Loading…', close: 'Close' },
 } as const;

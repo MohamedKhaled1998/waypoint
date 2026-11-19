@@ -4,7 +4,7 @@ namespace Waypoint.Api.Coach;
 public enum CoachCallKind
 {
     Interview, Plan, RePlan, WeeklyRefresh, Chat, Guide,
-    ReminderText, CheckInReplyNoNote, CheckInReplyWithNote, SilenceNudge,
+    ReminderText, CheckInReplyNoNote, CheckInReplyWithNote, SilenceNudge, MilestoneNote, MeasureNote,
 }
 
 public sealed record CoachTurn(string Role, string Text);

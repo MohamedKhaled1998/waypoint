@@ -25,6 +25,7 @@ public sealed class WaypointDb(DbContextOptions<WaypointDb> options, CurrentUser
     public DbSet<WeeklyRefresh> WeeklyRefreshes => Set<WeeklyRefresh>();
     public DbSet<Change> Changes => Set<Change>();
     public DbSet<Waypoint.Api.Coach.ProgressReading> ProgressReadings => Set<Waypoint.Api.Coach.ProgressReading>();
+    public DbSet<Waypoint.Api.Coach.MeasureReading> MeasureReadings => Set<Waypoint.Api.Coach.MeasureReading>();
 
     public override Task<int> SaveChangesAsync(CancellationToken ct = default)
     {
@@ -240,6 +241,20 @@ public sealed class WaypointDb(DbContextOptions<WaypointDb> options, CurrentUser
         {
             e.Property(r => r.State).HasMaxLength(16);
             e.HasIndex(r => new { r.UserId, r.AspirationId, r.At });
+            e.HasOne<Aspiration>().WithMany().HasForeignKey(r => r.AspirationId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<User>().WithMany().HasForeignKey(r => r.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasQueryFilter(r => r.UserId == CurrentUserId);
+        });
+        b.Entity<Milestone>().Property(m => m.MeasureName).HasMaxLength(64);
+        b.Entity<Milestone>().Property(m => m.MeasureUnit).HasMaxLength(24);
+        b.Entity<ScheduledAction>().Property(a => a.TestForMilestoneRef).HasMaxLength(32);
+        b.Entity<Waypoint.Api.Coach.MeasureReading>(e =>
+        {
+            e.Property(r => r.MilestoneRef).HasMaxLength(32);
+            e.Property(r => r.Source).HasMaxLength(16);
+            e.Property(r => r.ClientId).HasMaxLength(64);
+            e.HasIndex(r => new { r.UserId, r.ClientId }).IsUnique();
+            e.HasIndex(r => new { r.UserId, r.AspirationId, r.Date });
             e.HasOne<Aspiration>().WithMany().HasForeignKey(r => r.AspirationId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne<User>().WithMany().HasForeignKey(r => r.UserId).OnDelete(DeleteBehavior.Cascade);
             e.HasQueryFilter(r => r.UserId == CurrentUserId);

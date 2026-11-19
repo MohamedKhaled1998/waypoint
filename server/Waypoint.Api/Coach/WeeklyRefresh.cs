@@ -152,7 +152,7 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ProgressCa
         // Minutes already taken in each Slot on each day, by what the refresh keeps: other Aspirations and Check-ins already made.
         var plannedIds = planned.Select(a => a.Id).ToHashSet();
         var used = new Dictionary<(DateOnly, Guid), int>();
-        foreach (var a in await db.ScheduledActions.Where(a => a.Date >= start && (!plannedIds.Contains(a.AspirationId) || db.CheckIns.Any(c => c.ScheduledActionId == a.Id))).ToListAsync(ct))
+        foreach (var a in await db.ScheduledActions.Where(a => a.Date >= start && (!plannedIds.Contains(a.AspirationId) || a.TestForMilestoneRef != null || db.CheckIns.Any(c => c.ScheduledActionId == a.Id))).ToListAsync(ct))
             used[(a.Date, a.SlotId)] = used.GetValueOrDefault((a.Date, a.SlotId)) + a.Minutes;
 
         var made = new List<PlanVersion>();
@@ -168,6 +168,15 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ProgressCa
         var ids = new Dictionary<string, Guid> { ["refreshId"] = refresh.Id };
         jobs.Add(JobKinds.RefreshApply, refresh.UserId, ids, delay: WeeklyRefreshes.AutoApplyAfter);
         if (made.Count > 0) jobs.Add(JobKinds.RefreshPrompt, refresh.UserId, ids);
+        // A Measure is read about every four weeks: the Coach asks in chat, and the reply is saved as a reading.
+        foreach (var a in planned)
+        {
+            var current = currents.First(p => p.AspirationId == a.Id);
+            if (!await db.Milestones.AnyAsync(m => m.PlanVersionId == current.Id && m.MeasureName != null, ct)) continue;
+            var last = await db.MeasureReadings.Where(r => r.AspirationId == a.Id).Select(r => (DateOnly?)r.Date).MaxAsync(ct);
+            if (last is null || DateOnly.FromDateTime(now).DayNumber - last.Value.DayNumber >= MeasureMath.AskAfterDays)
+                jobs.Add(JobKinds.MeasureAsk, refresh.UserId, new Dictionary<string, Guid> { ["aspirationId"] = a.Id }, a.Id);
+        }
         await WeeklyRefreshes.ScheduleNextAsync(db, jobs, clock, now, ct, finishing: refresh.Id);
         await db.SaveChangesAsync(ct);
         log.LogInformation("Weekly refresh {RefreshId} proposed {Count} versions", refresh.Id, made.Count);
@@ -205,7 +214,9 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ProgressCa
         var milestoneIds = new Dictionary<Guid, Guid>();
         var newMilestones = oldMilestones.Select(m =>
         {
-            var copy = new Milestone { Id = Guid.NewGuid(), UserId = m.UserId, PlanVersionId = version.Id, Ref = m.Ref, Date = m.Date, Title = m.Title, ReachedWhen = m.ReachedWhen, Kind = m.Kind, State = m.State };
+            var copy = new Milestone { Id = Guid.NewGuid(), UserId = m.UserId, PlanVersionId = version.Id, Ref = m.Ref, Date = m.Date, Title = m.Title, ReachedWhen = m.ReachedWhen, Kind = m.Kind, State = m.State,
+                ReachedAt = m.ReachedAt, AskedAt = m.AskedAt, NotReachedAt = m.NotReachedAt,
+                MeasureName = m.MeasureName, MeasureUnit = m.MeasureUnit, MeasureStart = m.MeasureStart, MeasureHopedFor = m.MeasureHopedFor };
             milestoneIds[m.Id] = copy.Id;
             return copy;
         }).ToList();

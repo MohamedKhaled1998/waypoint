@@ -43,7 +43,7 @@ public static class CoachChat
     };
 
     private static async Task Send(SendMessageRequest req, HttpContext http, WaypointDb db, CurrentUser me,
-        ICoachModelClient model, IOptions<CoachOptions> options, TimeProvider clock, ILoggerFactory logs)
+        ICoachModelClient model, IOptions<CoachOptions> options, TimeProvider clock, ILoggerFactory logs, JobQueue jobs)
     {
         var log = logs.CreateLogger("Waypoint.Coach.Chat");
         var ct = http.RequestAborted;
@@ -62,6 +62,9 @@ public static class CoachChat
                 AspirationId = req.AspirationId, ClientId = req.ClientId, CreatedAt = clock.GetUtcNow().UtcDateTime,
             };
             db.ChatMessages.Add(user);
+            await db.SaveChangesAsync(ct);
+            // A reply to a Measure question is also a reading.
+            await Measures.CaptureReplyAsync(db, clock, jobs, user, ct);
             await db.SaveChangesAsync(ct);
         }
 

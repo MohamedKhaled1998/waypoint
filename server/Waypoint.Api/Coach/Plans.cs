@@ -107,7 +107,7 @@ public static class Plans
         var kept = new HashSet<(DateOnly, string)>();
         if (version.Reason == WeeklyRefreshes.Reason)
         {
-            var future = await db.ScheduledActions.Where(a => a.AspirationId == version.AspirationId && a.Date >= version.StartDate && a.PlanVersionId != id).ToListAsync(ct);
+            var future = await db.ScheduledActions.Where(a => a.AspirationId == version.AspirationId && a.Date >= version.StartDate && a.PlanVersionId != id && a.TestForMilestoneRef == null).ToListAsync(ct);
             var checkedIn = await db.CheckIns.Where(c => future.Select(a => a.Id).Contains(c.ScheduledActionId)).Select(c => c.ScheduledActionId).ToListAsync(ct);
             foreach (var a in future)
                 if (checkedIn.Contains(a.Id)) kept.Add((a.Date, a.Title));
@@ -129,9 +129,20 @@ public static class Plans
         }
         // The reminder text is written after approval, so a slow or failing model never holds up the Plan.
         jobs.Add(JobKinds.ReminderText, version.UserId, new Dictionary<string, Guid> { ["planVersionId"] = id }, version.AspirationId);
-        // The first approved Plan books the first Weekly refresh, after the Plan's first day.
+        // Every approved version re-books its upcoming Milestones' dates (and ability test tasks); jobs for the Milestones it replaces go.
+        var milestones = await db.Milestones.Where(m => m.PlanVersionId == id).OrderBy(m => m.Date).ToListAsync(ct);
+        var milestoneService = new MilestoneService(db, jobs, clock);
+        var stale = await db.Jobs.Where(j => j.AspirationId == version.AspirationId && j.State == JobState.Pending
+            && (j.Kind == JobKinds.MilestoneDue || j.Kind == JobKinds.MilestoneTestTask)).ToListAsync(ct);
+        db.Jobs.RemoveRange(stale);
+        foreach (var m in milestones.Where(m => m.State == MilestoneService.Upcoming)) milestoneService.Schedule(m, version.AspirationId);
         if (version.Reason == "first_plan")
+        {
+            // The first approved Plan books the first Weekly refresh, after the Plan's first day, and a Measure is read at Plan acceptance.
+            if (milestones.FirstOrDefault(m => m.MeasureStart is not null) is { } measured)
+                Measures.Add(db, clock, version.UserId, version.AspirationId, measured.MeasureStart!.Value, today, MeasureSources.PlanAccepted, null, null);
             await WeeklyRefreshes.ScheduleNextAsync(db, jobs, clock, version.StartDate.ToDateTime(new TimeOnly(23, 59, 59), DateTimeKind.Utc), ct);
+        }
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return Results.Ok(await ViewAsync(db, version, ct));
@@ -178,7 +189,8 @@ public static class Plans
         return Results.Conflict(new { error = "stale", reason = "replaced", newer = newer is null ? null : await ViewAsync(db, newer, ct) });
     }
 
-    public sealed record MilestoneView(Guid Id, DateOnly Date, string Title, string ReachedWhen, string Kind, string State);
+    public sealed record MeasureView(string Name, string? Unit, double? Start, double? HopedFor);
+    public sealed record MilestoneView(Guid Id, DateOnly Date, string Title, string ReachedWhen, string Kind, string State, MeasureView? Measure = null);
     public sealed record HabitView(Guid Id, string Title, int TimesPerWeek, int Minutes, IEnumerable<string?> Slots);
     public sealed record TaskView(Guid Id, string Title, int Minutes, DateOnly? Due, string? Milestone);
     public sealed record PlanVersionView(Guid Id, Guid AspirationId, string ShortName, string Hue, int? Number, string Status, string Reason,
@@ -194,7 +206,7 @@ public static class Plans
         var tasks = await db.PlanTasks.Where(t => t.PlanVersionId == v.Id).OrderBy(t => t.DueDate).ToListAsync(ct);
         return new PlanVersionView(v.Id, v.AspirationId, aspiration.ShortName, aspiration.Hue, v.Number, v.Status, v.Reason, v.Rationale, v.Ramp,
             JsonNode.Parse(v.AssumptionsJson), v.StartDate,
-            milestones.Select(m => new MilestoneView(m.Id, m.Date, m.Title, m.ReachedWhen, m.Kind, m.State)).ToList(),
+            milestones.Select(m => new MilestoneView(m.Id, m.Date, m.Title, m.ReachedWhen, m.Kind, m.State, m.HasMeasure ? new MeasureView(m.MeasureName!, m.MeasureUnit, m.MeasureStart, m.MeasureHopedFor) : null)).ToList(),
             habits.Select(h => new HabitView(h.Id, h.Title, h.TimesPerWeek, h.Minutes,
                 h.SlotIds.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(s => slots.GetValueOrDefault(Guid.Parse(s))).ToList())).ToList(),
             tasks.Select(t => new TaskView(t.Id, t.Title, t.Minutes, t.DueDate, milestones.FirstOrDefault(m => m.Id == t.MilestoneId)?.Title)).ToList(),

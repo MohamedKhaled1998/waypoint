@@ -221,6 +221,17 @@ public sealed class Milestone
     public required string Kind { get; set; }
     /// <summary>upcoming, reached or nearly_there.</summary>
     public required string State { get; set; }
+    public DateTime? ReachedAt { get; set; }
+    /// <summary>When the Coach asked "Did you reach it?" at the Milestone's date; null until asked, and again after an extension.</summary>
+    public DateTime? AskedAt { get; set; }
+    /// <summary>When the user said no to "Did you reach it?" and the work wasn't done: feeds a Re-plan, never a failure.</summary>
+    public DateTime? NotReachedAt { get; set; }
+    /// <summary>The optional Measure beside this Milestone (at most one): a Plan's Measures share one name and unit, so readings form one series.</summary>
+    public string? MeasureName { get; set; }
+    public string? MeasureUnit { get; set; }
+    public double? MeasureStart { get; set; }
+    public double? MeasureHopedFor { get; set; }
+    public bool HasMeasure => MeasureName is not null;
 }
 
 /// <summary>A recurring Action: "N times a week" on Slots. Belongs to the Plan version.</summary>
@@ -270,6 +281,8 @@ public sealed class ScheduledAction
     /// <summary>Written ahead by the light model, so a reminder needs no model call. Null until written.</summary>
     public string? ReminderText { get; set; }
     public bool ReminderOn { get; set; } = true;
+    /// <summary>Set on the one-off test task of an ability Milestone (its <see cref="Milestone.Ref"/>); a weekly refresh keeps it.</summary>
+    public string? TestForMilestoneRef { get; set; }
 }
 
 public static class ReminderKinds

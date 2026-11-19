@@ -3,6 +3,7 @@ import { Pressable, ScrollView, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet } from 'react-native-unistyles';
+import { MeasureTab } from '../../measure/MeasureTab';
 import { RouteStep, StatePill } from '../../progress/ProgressParts';
 import { useAspirationProgress } from '../../progress/useProgress';
 import { Card } from '../../ui/Card';
@@ -45,6 +46,8 @@ export default function AspirationScreen() {
             <RouteStep key={m.id} milestone={m} hue={a.hue} date={date(m.date)} />
           ))}
         </View>
+      ) : tab === 'measure' ? (
+        <MeasureTab aspirationId={a.aspirationId} hue={a.hue} />
       ) : (
         <Text muted>{t('progress.laterTab')}</Text>
       )}
