@@ -194,7 +194,7 @@ public sealed class WeeklyRefreshTests(WaypointApiFactory factory) : PlanTestBas
         var refresh = await RefreshAfterAsync(userId, null);
         await RunJobsAsync();
 
-        var push = Assert.Single(factory.Push.Sent, m => m.Token == token && m.Data["route"] == "weekly_refresh");
+        var push = Assert.Single(factory.Push.Sent, m => m.Token == token);
         Assert.Equal("weekly_refresh", push.Data["route"]);
         Assert.Equal(refresh.GetProperty("id").GetString(), push.Data["refreshId"]);
         Assert.Equal(ProposalOf(refresh).ToString(), push.Data["planVersionId"]);

@@ -47,28 +47,21 @@ public static class Plans
         });
 
         g.MapPut("/scheduled-actions/{id:guid}/reminder", SetReminder);
-        g.MapPut("/habits/{id:guid}/reminder", SetHabitReminder);
         g.MapGet("/scheduled-actions", async (WaypointDb db, CancellationToken ct) =>
         {
             var slots = await db.Slots.ToDictionaryAsync(s => s.Id, ct);
-            var anchors = await db.Anchors.ToDictionaryAsync(x => x.Id, ct);
             var checkIns = await db.CheckIns.ToDictionaryAsync(c => c.ScheduledActionId, ct);
-            var pauses = await db.Pauses.ToListAsync(ct);
             return Results.Ok((await db.ScheduledActions.OrderBy(a => a.Date).ThenBy(a => a.Title).ToListAsync(ct))
-                .Select(a => ActionView(a, a.SlotId is { } sid ? slots.GetValueOrDefault(sid) : null, checkIns.GetValueOrDefault(a.Id),
-                    a.AnchorId is { } aid ? anchors.GetValueOrDefault(aid) : null, Pauses.IsSetAside(pauses, a, checkIns.ContainsKey(a.Id)))));
+                .Select(a => ActionView(a, slots.GetValueOrDefault(a.SlotId), checkIns.GetValueOrDefault(a.Id))));
         });
     }
 
-    /// <summary>An Anchor Action sits at its Anchor's usual time ("SlotStart") with no Slot, so the phone's timeline and reminders treat it like any other.</summary>
-    public static object ActionView(ScheduledAction a, Slot? slot, CheckIn? checkIn, Anchor? anchor = null, bool setAside = false) => new
+    public static object ActionView(ScheduledAction a, Slot? slot, CheckIn? checkIn) => new
     {
-        a.Id, a.AspirationId, a.PlanVersionId, a.Date, SlotId = a.SlotId, Slot = slot?.Label, SlotStart = slot?.Start ?? anchor?.Time, SlotEnd = slot?.End,
-        a.Title, a.Minutes, a.HabitId, a.TargetMinutes, a.AtRisk,
-        Anchor = anchor is null ? null : new { anchor.Id, anchor.Words, anchor.Time },
+        a.Id, a.AspirationId, a.PlanVersionId, a.Date, SlotId = a.SlotId, Slot = slot?.Label, SlotStart = slot?.Start, SlotEnd = slot?.End,
+        a.Title, a.Minutes,
         ReminderKind = a.ReminderKind, ReminderLeadMinutes = a.ReminderLeadMinutes, ReminderText = a.ReminderText, ReminderOn = a.ReminderOn,
         CheckIn = checkIn is null ? null : CheckIns.View(checkIn),
-        SetAside = setAside,
     };
 
     internal static async Task<IResult> Approve(Guid id, WaypointDb db, TimeProvider clock, JobQueue jobs, CancellationToken ct)
@@ -112,7 +105,7 @@ public static class Plans
 
         // A refresh rolls the window: what it planned from its start on replaces what was planned, except Actions already checked in.
         var kept = new HashSet<(DateOnly, string)>();
-        if (RollsWindow(version.Reason))
+        if (version.Reason == WeeklyRefreshes.Reason)
         {
             var future = await db.ScheduledActions.Where(a => a.AspirationId == version.AspirationId && a.Date >= version.StartDate && a.PlanVersionId != id).ToListAsync(ct);
             var checkedIn = await db.CheckIns.Where(c => future.Select(a => a.Id).Contains(c.ScheduledActionId)).Select(c => c.ScheduledActionId).ToListAsync(ct);
@@ -120,9 +113,6 @@ public static class Plans
                 if (checkedIn.Contains(a.Id)) kept.Add((a.Date, a.Title));
                 else db.ScheduledActions.Remove(a);
         }
-        var versionHabits = await db.Habits.Where(h => h.PlanVersionId == id).ToListAsync(ct);
-        var targets = versionHabits.Where(h => h.TargetMinutes != null).ToDictionary(h => h.Id, h => h.TargetMinutes);
-        var offHabits = versionHabits.Where(h => !h.ReminderOn).Select(h => h.Id).ToHashSet();
         foreach (var a in JsonNode.Parse(version.TwoWeeksJson)!.AsArray().Select(a => a!.AsObject()))
         {
             if (kept.Contains((PlanRules.ParseDate(HandOff.Str(a, "date"))!.Value, HandOff.Str(a, "action")!))) continue;
@@ -130,9 +120,7 @@ public static class Plans
             db.ScheduledActions.Add(new ScheduledAction
             {
                 Id = Guid.NewGuid(), UserId = version.UserId, AspirationId = version.AspirationId, PlanVersionId = id,
-                HabitId = Ref(a, "habitId"), TaskId = Ref(a, "taskId"), SlotId = Ref(a, "slotId"), AnchorId = Ref(a, "anchorId"),
-                TargetMinutes = Ref(a, "habitId") is { } hid ? targets.GetValueOrDefault(hid) : null,
-                ReminderOn = Ref(a, "habitId") is { } hid2 ? !offHabits.Contains(hid2) : true,
+                HabitId = Ref(a, "habitId"), TaskId = Ref(a, "taskId"), SlotId = Ref(a, "slotId")!.Value,
                 Date = PlanRules.ParseDate(HandOff.Str(a, "date"))!.Value, Title = HandOff.Str(a, "action")!,
                 Minutes = (int)HandOff.Num(a, "minutes")!.Value,
                 ReminderKind = HandOff.Str(a, "reminder") == ReminderKinds.GetReady ? ReminderKinds.GetReady : ReminderKinds.Now,
@@ -141,36 +129,13 @@ public static class Plans
         }
         // The reminder text is written after approval, so a slow or failing model never holds up the Plan.
         jobs.Add(JobKinds.ReminderText, version.UserId, new Dictionary<string, Guid> { ["planVersionId"] = id }, version.AspirationId);
-        if (BudgetCuts.IsCut(version.Reason)) await BudgetCuts.OnApprovedAsync(db, jobs, clock, version, ct);
-        if (version.Reason == Settings.BudgetChangeReason) await BudgetChangeApprovedAsync(db, version, ct);
         // The first approved Plan books the first Weekly refresh, after the Plan's first day.
-        if (version.Reason == "first_plan")
-            await Silence.TouchAsync(db, jobs, clock, ct); // the user just approved their first Plan: silence counts from here
         if (version.Reason == "first_plan")
             await WeeklyRefreshes.ScheduleNextAsync(db, jobs, clock, version.StartDate.ToDateTime(new TimeOnly(23, 59, 59), DateTimeKind.Utc), ct);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return Results.Ok(await ViewAsync(db, version, ct));
     }
-
-    /// <summary>An approved Time budget change moves the Aspiration's share, and the budget to what the user asked for.</summary>
-    private static async Task BudgetChangeApprovedAsync(WaypointDb db, PlanVersion version, CancellationToken ct)
-    {
-        var aspiration = await db.Aspirations.FirstAsync(a => a.Id == version.AspirationId, ct);
-        if (version.ShareAfterHours is { } share) aspiration.ShareHoursPerWeek = share;
-        var user = await db.Users.SingleAsync(ct);
-        if (user.RequestedTimeBudgetHours is { } hours)
-        {
-            if (user.TimeBudgetHours is > 0 and var old && old != hours) await Settings.ScaleUnplannedSharesAsync(db, hours / old, ct);
-            user.TimeBudgetHours = hours;
-        }
-        // The request is done once no other Aspiration's proposal of it still waits for a tap.
-        if (!await db.PlanVersions.AnyAsync(p => p.Reason == Settings.BudgetChangeReason && p.Status == PlanVersionStatus.Proposed && p.Id != version.Id, ct))
-            user.RequestedTimeBudgetHours = null;
-    }
-
-    /// <summary>Every version after the first Plan lays out its window anew, from its start on, keeping only Actions already checked in.</summary>
-    private static bool RollsWindow(string reason) => reason != "first_plan";
 
     private static int LeadFrom(JsonObject a)
     {
@@ -192,36 +157,8 @@ public static class Plans
         action.ReminderOn = req.On.Value;
         await db.SaveChangesAsync(ct);
         var slot = await db.Slots.FirstOrDefaultAsync(s => s.Id == action.SlotId, ct);
-        var anchor = await db.Anchors.FirstOrDefaultAsync(x => x.Id == action.AnchorId, ct);
         var checkIn = await db.CheckIns.FirstOrDefaultAsync(c => c.ScheduledActionId == id, ct);
-        return Results.Ok(ActionView(action, slot, checkIn, anchor, await Pauses.IsSetAsideAsync(db, action, checkIn is not null, ct)));
-    }
-
-    public sealed record HabitReminderRequest(bool? On, bool? FromOffer);
-
-    /// <summary>
-    /// The user switches a habit's reminder on or off: the habit in the current Plan (and any pending proposal) and its coming Actions.
-    /// Taking the Coach's offer to stop an Anchor habit's reminder marks it, so a refresh may bring it back if the habit slips.
-    /// </summary>
-    private static async Task<IResult> SetHabitReminder(Guid id, HabitReminderRequest req, WaypointDb db, TimeProvider clock, CancellationToken ct)
-    {
-        if (req.On is null) return Results.BadRequest();
-        var habit = await db.Habits.FirstOrDefaultAsync(h => h.Id == id, ct);
-        if (habit is null) return Results.NotFound();
-        var version = await db.PlanVersions.FirstAsync(p => p.Id == habit.PlanVersionId, ct);
-        var live = await db.PlanVersions.Where(p => p.AspirationId == version.AspirationId
-            && (p.Status == PlanVersionStatus.Approved || p.Status == PlanVersionStatus.Proposed)).Select(p => p.Id).ToListAsync(ct);
-        foreach (var h in await db.Habits.Where(h => live.Contains(h.PlanVersionId) && h.Title == habit.Title).ToListAsync(ct))
-        {
-            h.ReminderOn = req.On.Value;
-            h.StoppedByOffer = !req.On.Value && req.FromOffer == true && h.AnchorId is not null;
-            if (req.FromOffer == true) h.StopOffered = true;
-        }
-        var today = DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
-        foreach (var a in await db.ScheduledActions.Where(a => a.AspirationId == version.AspirationId && a.Title == habit.Title && a.Date >= today).ToListAsync(ct))
-            a.ReminderOn = req.On.Value;
-        await db.SaveChangesAsync(ct);
-        return Results.NoContent();
+        return Results.Ok(ActionView(action, slot, checkIn));
     }
 
     private static Guid? Ref(JsonObject a, string name) => Guid.TryParse(HandOff.Str(a, name), out var g) ? g : null;
@@ -242,8 +179,7 @@ public static class Plans
     }
 
     public sealed record MilestoneView(Guid Id, DateOnly Date, string Title, string ReachedWhen, string Kind, string State);
-    public sealed record HabitView(Guid Id, string Title, int TimesPerWeek, int Minutes, IEnumerable<string?> Slots,
-        object? Anchor = null, int? TargetMinutes = null, string? PrepFor = null, bool ReminderOn = true);
+    public sealed record HabitView(Guid Id, string Title, int TimesPerWeek, int Minutes, IEnumerable<string?> Slots);
     public sealed record TaskView(Guid Id, string Title, int Minutes, DateOnly? Due, string? Milestone);
     public sealed record PlanVersionView(Guid Id, Guid AspirationId, string ShortName, string Hue, int? Number, string Status, string Reason,
         string Rationale, string Ramp, JsonNode? Assumptions, DateOnly StartDate, IEnumerable<MilestoneView> Milestones,
@@ -255,15 +191,12 @@ public static class Plans
         var slots = await db.Slots.ToDictionaryAsync(s => s.Id, s => s.Label, ct);
         var milestones = await db.Milestones.Where(m => m.PlanVersionId == v.Id).OrderBy(m => m.Date).ToListAsync(ct);
         var habits = await db.Habits.Where(h => h.PlanVersionId == v.Id).ToListAsync(ct);
-        var anchors = await db.Anchors.ToDictionaryAsync(x => x.Id, ct);
         var tasks = await db.PlanTasks.Where(t => t.PlanVersionId == v.Id).OrderBy(t => t.DueDate).ToListAsync(ct);
         return new PlanVersionView(v.Id, v.AspirationId, aspiration.ShortName, aspiration.Hue, v.Number, v.Status, v.Reason, v.Rationale, v.Ramp,
             JsonNode.Parse(v.AssumptionsJson), v.StartDate,
             milestones.Select(m => new MilestoneView(m.Id, m.Date, m.Title, m.ReachedWhen, m.Kind, m.State)).ToList(),
             habits.Select(h => new HabitView(h.Id, h.Title, h.TimesPerWeek, h.Minutes,
-                h.SlotIds.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(s => slots.GetValueOrDefault(Guid.Parse(s))).ToList(),
-                h.AnchorId is { } aid && anchors.TryGetValue(aid, out var an) ? new { an.Id, an.Words, an.Time, Days = an.Days.Split(',', StringSplitOptions.RemoveEmptyEntries) } : null,
-                h.TargetMinutes, h.PrepFor, h.ReminderOn)).ToList(),
+                h.SlotIds.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(s => slots.GetValueOrDefault(Guid.Parse(s))).ToList())).ToList(),
             tasks.Select(t => new TaskView(t.Id, t.Title, t.Minutes, t.DueDate, milestones.FirstOrDefault(m => m.Id == t.MilestoneId)?.Title)).ToList(),
             JsonNode.Parse(v.TwoWeeksJson), v.RefreshId, v.ChangesJson is null ? null : JsonNode.Parse(v.ChangesJson), v.AutoApplied,
             // What a proposal would replace: that version stays in the Plan's history.

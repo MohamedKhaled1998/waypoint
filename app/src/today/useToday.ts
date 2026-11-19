@@ -60,5 +60,5 @@ export function useToday() {
       return () => clearInterval(timer);
     }, [phone, reload]),
   );
-  return { actions, slots, loaded, task, undo, failed, move: api.move, setHabitReminder: api.setHabitReminder };
+  return { actions, slots, loaded, task, undo, failed, move: api.move };
 }

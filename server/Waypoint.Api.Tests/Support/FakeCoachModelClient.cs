@@ -15,7 +15,7 @@ public sealed class FakeCoachModelClient : ICoachModelClient
     public void Enqueue(params string[] chunks) => Script.Enqueue(chunks);
 
     /// <summary>Answers a request itself when it returns chunks, before <see cref="Script"/>; for tests with many jobs in flight.</summary>
-    public Func<CoachRequest, string[]?>? Responder { get; set; } = req => ReminderTextFor(req) ?? WeeklyRefreshFor(req) ?? SilenceNudgeFor(req);
+    public Func<CoachRequest, string[]?>? Responder { get; set; } = req => ReminderTextFor(req) ?? WeeklyRefreshFor(req);
 
     /// <summary>The default responder: every reminder batch gets text for each Action in it, so those jobs never eat a scripted reply.</summary>
     public static string[]? ReminderTextFor(CoachRequest req)
@@ -24,12 +24,6 @@ public sealed class FakeCoachModelClient : ICoachModelClient
         var ids = System.Text.Json.JsonDocument.Parse(req.Turns[0].Text).RootElement.GetProperty("actions").EnumerateArray().Select(a => a.GetProperty("id").GetString());
         return ["```json\n" + System.Text.Json.JsonSerializer.Serialize(new { reminders = ids.Select(id => new { id, text = "Easy run: shoes by the door." }) }) + "\n```"];
     }
-
-    /// <summary>A silence nudge: one line, so a nudge that comes due never eats a scripted reply.</summary>
-    public static string[]? SilenceNudgeFor(CoachRequest req) => req.Kind == CoachCallKind.SilenceNudge ? ["Thinking of you; no rush."] : null;
-
-    /// <summary>The chat's Pause check: by default the message is not a request to pause. A test sets <see cref="PauseIntent"/>.</summary>
-    public string? PauseIntent { get; set; }
 
     /// <summary>The weekly refresh call: a rationale and a reason for every change code it was given.</summary>
     public static string[]? WeeklyRefreshFor(CoachRequest req)
@@ -44,7 +38,7 @@ public sealed class FakeCoachModelClient : ICoachModelClient
     {
         Requests.Add(request);
         if (Fail) throw new InvalidOperationException("provider down");
-        var chunks = (request.Kind == CoachCallKind.PauseIntent ? new[] { PauseIntent ?? "{\"pause\": null}" } : null) ?? Responder?.Invoke(request) ?? (Script.Count > 0 ? Script.Dequeue() : Chunks.ToArray());
+        var chunks = Responder?.Invoke(request) ?? (Script.Count > 0 ? Script.Dequeue() : Chunks.ToArray());
         foreach (var chunk in chunks)
         {
             await Task.Yield();

@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { FlatList, Pressable, ScrollView, TextInput, View } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet, useUnistyles } from 'react-native-unistyles';
+import { interviewResume } from '../firstrun/firstRun';
+import { firstRun } from '../firstrun/native';
+import { useFirstRun } from '../firstrun/native';
+import { StepCounter } from '../ui/StepCounter';
 import { useKeyboardHeight } from '../coach/useKeyboardHeight';
 import { SHORT_NAME_MAX, type Heard } from '../interview/interview';
 import { useInterview } from '../interview/useInterview';
@@ -17,9 +21,30 @@ export default function InterviewScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const iv = useInterview();
+  const { step } = useFirstRun();
+  const inFirstRun = step === 'interview';
+  // First run: the words came from the Aspiration step, so the Interview opens straight into the Coach's first question.
+  const { words } = useLocalSearchParams<{ words?: string }>();
+  const begun = useRef(false);
+  useEffect(() => {
+    if (!words || !iv.opened || iv.started || begun.current) return;
+    begun.current = true;
+    void iv.begin(String(words));
+  }, [words, iv]);
+  // Reopened at this step before any Interview was made: the Aspiration step is the one left, never the words box here.
+  const goBack = interviewResume({ inFirstRun, opened: iv.opened, started: iv.started, hasWords: !!words }) === 'aspiration';
+  useEffect(() => {
+    if (goBack) void firstRun.advance('aspiration').then(() => router.replace('/aspiration'));
+  }, [goBack, router]);
   function leave() {
     router.back();
   }
+  // Confirming the picture hands the Plan to the Coach: first run waits on the drafting screen.
+  const interviewDone = iv.step === 'done';
+  useEffect(() => {
+    if (!interviewDone || !inFirstRun) return;
+    void firstRun.advance('drafting').then(() => router.replace('/drafting'));
+  }, [interviewDone, inFirstRun, router]);
 
   return (
     <View style={styles.container}>
@@ -27,6 +52,7 @@ export default function InterviewScreen() {
         options={{
           title: t('interview.title'),
           headerBackVisible: false,
+          gestureEnabled: false,
           headerRight: () => (
             <Pressable accessibilityRole="button" onPress={leave} hitSlop={8}>
               <Text variant="label" style={styles.leave}>{t('interview.saveAndLeave')}</Text>
@@ -34,7 +60,8 @@ export default function InterviewScreen() {
           ),
         }}
       />
-      {!iv.started ? <OwnWords onBegin={(words) => void iv.begin(words)} /> : null}
+      {inFirstRun ? <View style={styles.counter}><StepCounter step="interview" /></View> : null}
+      {!iv.started && !words ? <OwnWords onBegin={(words) => void iv.begin(words)} /> : null}
       {iv.started && iv.step !== 'done' ? <HeardStrip heard={iv.heard} /> : null}
       {iv.started && iv.step === 'chat' ? <Chat iv={iv} /> : null}
       {iv.step === 'shortName' ? <ShortNameStep iv={iv} /> : null}
@@ -264,6 +291,7 @@ function Done({ onClose }: { onClose: () => void }) {
 const styles = StyleSheet.create((theme) => ({
   container: { flex: 1, backgroundColor: theme.colors.background },
   leave: { color: theme.colors.accent },
+  counter: { paddingHorizontal: theme.space.lg },
   pad: { padding: theme.space.lg, gap: theme.space.md },
   field: {
     padding: theme.space.md,

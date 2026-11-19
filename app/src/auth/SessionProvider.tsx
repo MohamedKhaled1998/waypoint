@@ -4,6 +4,7 @@ import { clearGoogleAccount, getGoogleIdToken } from './google';
 import { keystoreStorage } from './secureStorage';
 import { createPhoneSync, phoneStorage, type PhoneSync } from '../sync/phone';
 import { forgetPushToken } from '../push/native';
+import { firstRun } from '../firstrun/native';
 import { createSession } from './session';
 
 type Status = 'loading' | 'signedOut' | 'signedIn';
@@ -58,6 +59,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       async signOut() {
         await forgetPushToken({ getAccessToken: session.getAccessToken, renewAccess: () => session.restore().catch(() => false) });
         await session.signOut();
+        await firstRun.reset();
         await clearGoogleAccount();
         setStatus('signedOut');
       },

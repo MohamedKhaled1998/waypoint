@@ -69,9 +69,6 @@ public static class CheckIns
             || req.Minutes is < 0 or > 1440)
             return Results.BadRequest();
 
-        await Silence.TouchAsync(db, jobs, clock, ct);
-        await db.SaveChangesAsync(ct);
-
         // A resend of a tap already stored changes nothing.
         var same = await db.CheckIns.FirstOrDefaultAsync(c => c.ClientId == req.ClientId, ct);
         if (same is not null) return Results.Ok(View(same));
@@ -102,7 +99,6 @@ public static class CheckIns
             // The old reply answered the old state: it goes, and the new state gets its own.
             db.ChatMessages.RemoveRange(await db.ChatMessages.Where(m => m.InReplyToId == echo.Id).ToListAsync(ct));
             await db.SaveChangesAsync(ct);
-            await PrepRisk.UpdateAsync(db, action, ct);
             if (!await db.Jobs.AnyAsync(j => j.Kind == JobKinds.CheckInReply && j.State == JobState.Pending
                     && j.PayloadJson.Contains(existing.Id.ToString()), ct))
                 await jobs.EnqueueAsync(JobKinds.CheckInReply, me.Id!.Value, new Dictionary<string, Guid> { ["checkInId"] = existing.Id }, action.AspirationId, ReplyDelay, ct);
@@ -124,7 +120,6 @@ public static class CheckIns
         db.CheckIns.Add(checkIn);
         jobs.Add(JobKinds.CheckInReply, me.Id.Value, new Dictionary<string, Guid> { ["checkInId"] = checkIn.Id }, action.AspirationId, ReplyDelay);
         await db.SaveChangesAsync(ct);
-        await PrepRisk.UpdateAsync(db, action, ct);
         return Results.Ok(View(checkIn));
     }
 
@@ -137,7 +132,6 @@ public static class CheckIns
         db.ChatMessages.RemoveRange(messages);
         db.CheckIns.Remove(checkIn);
         await db.SaveChangesAsync(ct);
-        if (await db.ScheduledActions.FirstOrDefaultAsync(a => a.Id == id, ct) is { } undone) await PrepRisk.UpdateAsync(db, undone, ct);
         return Results.NoContent();
     }
 }
@@ -164,7 +158,6 @@ public sealed class CheckInReplies(WaypointDb db, ICoachModelClient model, IOpti
             .OrderBy(m => m.Seq).ToListAsync(ct);
         var turns = window.SkipWhile(m => m.Role != "user").Select(m => new CoachTurn(m.Role == "user" ? "user" : "assistant", m.Text)).ToList();
         if (checkIn.Note is not null) turns[^1] = turns[^1] with { Text = $"{turns[^1].Text}\n{checkIn.Note}" };
-        if (await PrepRisk.NoteForCoachAsync(db, checkIn, ct) is { } risk) turns[^1] = turns[^1] with { Text = $"{turns[^1].Text}\n{risk}" };
 
         var reply = new StringBuilder();
         await foreach (var chunk in model.StreamAsync(new CoachRequest(kind, choice.Provider, choice.Model, SystemPrompt, turns), ct))

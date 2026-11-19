@@ -27,7 +27,7 @@ export type SheetState = {
   coachWillAsk: boolean;
 };
 
-/** The Action sheet's two steps. Not today is a Pause: just this Action, everything for the rest of today, or everything for a few days. */
+/** The Action sheet's two steps. Not today offers only "this Action" until Pause arrives. */
 export function createActionSheet(action: { scheduledActionId: string; minutes: number }) {
   let s: SheetState = {
     step: 1, choice: null, followUp: null, reasons: [], minutes: null, otherMinutes: '', note: '', showFreeText: false, coachWillAsk: false,
@@ -43,7 +43,7 @@ export function createActionSheet(action: { scheduledActionId: string; minutes: 
   };
 
   return {
-    notTodayScopes: ['thisAction', 'everythingToday', 'fewDays'] as const,
+    notTodayScopes: ['thisAction'] as const,
     state: () => s,
     choose(choice: CheckInState) {
       set({

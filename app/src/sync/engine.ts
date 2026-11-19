@@ -6,8 +6,6 @@ export type Pull = {
   more: boolean;
   changes: Change[];
   slots: { id: string; label: string; days: string; start: string; end: string }[];
-  /** The Pauses in force; every page carries the whole list. */
-  pauses?: unknown[];
 };
 
 /** What the server said to one outbox item. A thrown error means it could not be reached: try again later. */
@@ -39,7 +37,6 @@ export function pullToWrite(pull: Pull): CacheWrite {
     else write.upserts.push({ kind: c.kind, id: c.id, data: c.data });
   }
   for (const s of pull.slots) write.upserts.push({ kind: 'slot', id: s.id, data: s });
-  if (pull.pauses) write.upserts.push({ kind: 'pauses', id: 'active', data: { pauses: pull.pauses } });
   return write;
 }
 

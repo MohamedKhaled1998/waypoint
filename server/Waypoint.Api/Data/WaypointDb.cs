@@ -10,7 +10,6 @@ public sealed class WaypointDb(DbContextOptions<WaypointDb> options, CurrentUser
 
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
     public DbSet<Slot> Slots => Set<Slot>();
-    public DbSet<SlotEdit> SlotEdits => Set<SlotEdit>();
     public DbSet<Aspiration> Aspirations => Set<Aspiration>();
     public DbSet<Interview> Interviews => Set<Interview>();
     public DbSet<InterviewMessage> InterviewMessages => Set<InterviewMessage>();
@@ -19,13 +18,11 @@ public sealed class WaypointDb(DbContextOptions<WaypointDb> options, CurrentUser
     public DbSet<Waypoint.Api.Push.DeviceToken> DeviceTokens => Set<Waypoint.Api.Push.DeviceToken>();
     public DbSet<PlanVersion> PlanVersions => Set<PlanVersion>();
     public DbSet<Milestone> Milestones => Set<Milestone>();
-    public DbSet<Anchor> Anchors => Set<Anchor>();
     public DbSet<Habit> Habits => Set<Habit>();
     public DbSet<PlanTask> PlanTasks => Set<PlanTask>();
     public DbSet<ScheduledAction> ScheduledActions => Set<ScheduledAction>();
     public DbSet<CheckIn> CheckIns => Set<CheckIn>();
     public DbSet<WeeklyRefresh> WeeklyRefreshes => Set<WeeklyRefresh>();
-    public DbSet<Pause> Pauses => Set<Pause>();
     public DbSet<Change> Changes => Set<Change>();
 
     public override Task<int> SaveChangesAsync(CancellationToken ct = default)
@@ -104,16 +101,6 @@ public sealed class WaypointDb(DbContextOptions<WaypointDb> options, CurrentUser
         });
         b.Entity<User>().Property(u => u.ContactFrequency).HasMaxLength(16);
         b.Entity<Slot>(e =>
-        {
-            e.Property(s => s.Label).HasMaxLength(64);
-            e.Property(s => s.Days).HasMaxLength(32);
-            e.Property(s => s.Start).HasMaxLength(5);
-            e.Property(s => s.End).HasMaxLength(5);
-            e.HasIndex(s => s.UserId);
-            e.HasOne<User>().WithMany().HasForeignKey(s => s.UserId);
-            e.HasQueryFilter(s => s.UserId == CurrentUserId);
-        });
-        b.Entity<SlotEdit>(e =>
         {
             e.Property(s => s.Label).HasMaxLength(64);
             e.Property(s => s.Days).HasMaxLength(32);
@@ -227,7 +214,6 @@ public sealed class WaypointDb(DbContextOptions<WaypointDb> options, CurrentUser
             e.HasOne<PlanVersion>().WithMany().HasForeignKey(a => a.PlanVersionId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne<Aspiration>().WithMany().HasForeignKey(a => a.AspirationId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne<Slot>().WithMany().HasForeignKey(a => a.SlotId).OnDelete(DeleteBehavior.Cascade);
-            e.HasOne<Anchor>().WithMany().HasForeignKey(a => a.AnchorId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne<User>().WithMany().HasForeignKey(a => a.UserId);
             e.HasQueryFilter(a => a.UserId == CurrentUserId);
         });
@@ -240,18 +226,7 @@ public sealed class WaypointDb(DbContextOptions<WaypointDb> options, CurrentUser
             e.HasOne<User>().WithMany().HasForeignKey(c => c.UserId);
             e.HasQueryFilter(c => c.UserId == CurrentUserId);
         });
-        b.Entity<Pause>(e =>
-        {
-            e.Property(p => p.ClientId).HasMaxLength(64);
-            e.Property(p => p.StartedBy).HasMaxLength(8);
-            e.Property(p => p.ReturnChoice).HasMaxLength(16);
-            e.HasIndex(p => new { p.UserId, p.ClientId }).IsUnique();
-            e.HasOne<User>().WithMany().HasForeignKey(p => p.UserId).OnDelete(DeleteBehavior.Cascade);
-            e.HasQueryFilter(p => p.UserId == CurrentUserId);
-        });
         b.Entity<User>().Property(u => u.RefreshTime).HasMaxLength(5).HasDefaultValue("18:00");
-        b.Entity<User>().Property(u => u.QuietStart).HasMaxLength(5).HasDefaultValue("21:30");
-        b.Entity<User>().Property(u => u.QuietEnd).HasMaxLength(5).HasDefaultValue("07:00");
         b.Entity<PlanVersion>().Property(p => p.ChangesJson).HasColumnType("longtext");
         b.Entity<WeeklyRefresh>(e =>
         {
@@ -260,17 +235,6 @@ public sealed class WaypointDb(DbContextOptions<WaypointDb> options, CurrentUser
             e.HasOne<User>().WithMany().HasForeignKey(r => r.UserId).OnDelete(DeleteBehavior.Cascade);
             e.HasQueryFilter(r => r.UserId == CurrentUserId);
         });
-        b.Entity<Anchor>(e =>
-        {
-            e.Property(a => a.Words).HasMaxLength(120);
-            e.Property(a => a.Time).HasMaxLength(5);
-            e.Property(a => a.Days).HasMaxLength(32);
-            e.HasOne<User>().WithMany().HasForeignKey(a => a.UserId);
-            e.HasQueryFilter(a => a.UserId == CurrentUserId);
-        });
-        b.Entity<Habit>().Property(h => h.PrepFor).HasMaxLength(200);
-        b.Entity<Habit>().Property(h => h.ReminderOn).HasDefaultValue(true);
-        b.Entity<Aspiration>().Property(a => a.AnchorQueueJson).HasColumnType("longtext");
         b.Entity<ScheduledAction>().Property(a => a.MoveClientIds).HasMaxLength(1024);
         b.Entity<ScheduledAction>().Property(a => a.ReminderKind).HasMaxLength(16);
         b.Entity<ScheduledAction>().Property(a => a.ReminderText).HasMaxLength(300);

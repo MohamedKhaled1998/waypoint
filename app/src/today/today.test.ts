@@ -1,4 +1,4 @@
-import { buildToday, resultLabel, timeLabel, type ScheduledActionView } from './today';
+import { buildToday, resultLabel, type ScheduledActionView } from './today';
 
 const action = (id: string, over: Partial<ScheduledActionView> = {}): ScheduledActionView => ({
   id,
@@ -81,27 +81,5 @@ describe('result label', () => {
     expect(resultLabel(action('a', { checkIn: checked('partly', 20) }))).toEqual({ state: 'partly', minutes: 20, planned: 30 });
     expect(resultLabel(action('a', { checkIn: checked('skipped') }))).toEqual({ state: 'skipped' });
     expect(resultLabel(action('a'))).toBeNull();
-  });
-});
-
-describe('Anchor habits on Today', () => {
-  const walk = (over: Partial<ScheduledActionView> = {}) =>
-    action('walk', { slot: null, slotStart: '19:30', slotEnd: null, title: 'Walk after dinner', minutes: 0, anchor: { id: 'an', words: 'after dinner', time: '19:30' }, ...over });
-
-  it('shows an Anchor habit at its usual time with its words, and a Slot Action at its Slot start', () => {
-    expect(timeLabel(walk())).toBe('~19:30 · After dinner');
-    expect(timeLabel(action('run'))).toBe('07:00');
-  });
-
-  it('sits the Anchor habit in the timeline with the rest of the day and the "now" line before it', () => {
-    const today = buildToday([walk(), action('run', { slotStart: '07:00', checkIn: checked('done') }), action('late', { slotStart: '21:00', title: 'Stretch' })], at('12:00'));
-    expect(today.timeline.map((a) => a.id)).toEqual(['run', 'walk', 'late']);
-    expect(today.nowLineBefore).toBe(1);
-    expect(today.nowCard).toEqual({ kind: 'next', action: expect.objectContaining({ id: 'walk' }) });
-  });
-
-  it('adds no minutes to the day: an Anchor habit takes no Slot time', () => {
-    const today = buildToday([walk({ checkIn: checked('done') }), action('run', { checkIn: checked('done') })], at('20:00'));
-    expect(today.summary).toMatchObject({ checkedIn: 2, total: 2, minutesDone: 30, minutesPlanned: 30 });
   });
 });

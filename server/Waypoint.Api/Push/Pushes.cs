@@ -19,7 +19,6 @@ public static class Pushes
     public const int MaxTokenLength = 512;
     public const string PlanReadyRoute = "plan_ready";
     public const string CoachRoute = "coach";
-    public const string BatteryHint = "battery_settings";
     public const string WeeklyRefreshRoute = "weekly_refresh";
     /// <summary>The notification category whose "Looks good" action accepts the refresh from the shade.</summary>
     public const string RefreshCategory = "weekly_refresh";
@@ -50,7 +49,7 @@ public static class Pushes
 }
 
 /// <summary>Pushes a stored chat message to the user's phone. Runs as the job's user.</summary>
-public sealed class PushNotifier(WaypointDb db, IPushSender sender, TimeProvider clock)
+public sealed class PushNotifier(WaypointDb db, IPushSender sender)
 {
     private const int MaxBody = 140;
 
@@ -79,9 +78,6 @@ public sealed class PushNotifier(WaypointDb db, IPushSender sender, TimeProvider
     {
         var message = await db.ChatMessages.FirstOrDefaultAsync(m => m.Id == chatMessageId, ct);
         if (message is null) return;
-        // Inside a Pause the Coach stays quiet: the message waits in the chat. Only the way back and the auto-Pause's own line get through.
-        if (message.Card is not (Pauses.WelcomeBackCard or SilenceChecker.Card)
-            && await Pauses.IsPausedNowAsync(db, clock.GetUtcNow().UtcDateTime, message.AspirationId, ct)) return;
         var tokens = await db.DeviceTokens.ToListAsync(ct);
         if (tokens.Count == 0) return;
 
@@ -95,12 +91,7 @@ public sealed class PushNotifier(WaypointDb db, IPushSender sender, TimeProvider
                     new Dictionary<string, string> { ["route"] = Pushes.PlanReadyRoute, ["planVersionId"] = planVersionId });
             }
             var text = message.Text.Length > MaxBody ? message.Text[..MaxBody] + "…" : message.Text;
-            var data = new Dictionary<string, string> { ["route"] = Pushes.CoachRoute };
-            // A second nudge after a week of silence: if reminders were being missed, the phone offers the battery setting.
-            if (message.Card == SilenceChecker.Card && System.Text.Json.JsonDocument.Parse(message.CardJson ?? "{}").RootElement
-                    .TryGetProperty("stage", out var stage) && stage.GetInt32() == 2)
-                data["hint"] = Pushes.BatteryHint;
-            return new PushMessage(token, "Coach", text, data);
+            return new PushMessage(token, "Coach", text, new Dictionary<string, string> { ["route"] = Pushes.CoachRoute });
         }
 
         foreach (var t in tokens)
@@ -110,19 +101,15 @@ public sealed class PushNotifier(WaypointDb db, IPushSender sender, TimeProvider
     }
 }
 
-/// <summary>
-/// Posts a Coach message the user didn't ask for, and queues its push (the job holds the message ID only).
-/// It takes the <see cref="ContactGate"/>'s Send decision as a permit, so no sender can skip the gate.
-/// </summary>
+/// <summary>Posts a Coach message the user didn't ask for, and queues its push (the job holds the message ID only).</summary>
 public sealed class CoachMessenger(WaypointDb db, JobQueue jobs, TimeProvider clock, Waypoint.Api.Auth.CurrentUser me)
 {
-    public async Task PostUnpromptedAsync(GateDecision.Send permit, Guid? aspirationId, string text, CancellationToken ct, string? card = null, string? cardJson = null)
+    public async Task PostUnpromptedAsync(Guid? aspirationId, string text, CancellationToken ct)
     {
-        ArgumentNullException.ThrowIfNull(permit);
         var message = new ChatMessage
         {
             Id = Guid.NewGuid(), UserId = me.Id!.Value, Role = "coach", Text = text, AspirationId = aspirationId,
-            CreatedAt = clock.GetUtcNow().UtcDateTime, Card = card, CardJson = cardJson, Unprompted = true,
+            CreatedAt = clock.GetUtcNow().UtcDateTime,
         };
         db.ChatMessages.Add(message);
         jobs.Add(JobKinds.PushMessage, me.Id.Value, new Dictionary<string, Guid> { ["chatMessageId"] = message.Id }, aspirationId);

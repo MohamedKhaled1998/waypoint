@@ -24,14 +24,6 @@ export type ScheduledActionView = {
   date: string;
   slotId?: string | null;
   slot: string | null;
-  /** The habit this is a session of; the same for every session in one Plan version. */
-  habitId?: string | null;
-  /** An Anchor habit's Action has an Anchor instead of a Slot; `slotStart` then holds the Anchor's usual time. */
-  anchor?: { id: string; words: string; time: string } | null;
-  /** An Anchor habit's optional target duration ("walk 20 min"). Not planned time. */
-  targetMinutes?: number | null;
-  /** A skipped prep put this night at risk. */
-  atRisk?: boolean;
   slotStart: string | null;
   slotEnd: string | null;
   title: string;
@@ -43,8 +35,6 @@ export type ScheduledActionView = {
   /** Written ahead by the server, so a reminder needs no model call. Null until it arrives. */
   reminderText?: string | null;
   reminderOn?: boolean;
-  /** Inside a Pause: counts neither as done nor missed, and has no reminder. */
-  setAside?: boolean;
 };
 
 export type TodayModel = {
@@ -58,13 +48,6 @@ export type TodayModel = {
   /** The last date the cache has Actions for; nothing is planned past it until the phone connects. */
   plannedUntil: string | null;
 };
-
-/** What the timeline's time column says: the Slot start, or an Anchor's usual time with its words ("~19:30 · After dinner"). */
-export function timeLabel(a: ScheduledActionView): string {
-  if (!a.anchor) return a.slotStart ?? '';
-  const words = a.anchor.words.charAt(0).toUpperCase() + a.anchor.words.slice(1);
-  return `~${a.slotStart ?? a.anchor.time} · ${words}`;
-}
 
 const startOf = (a: ScheduledActionView) => a.slotStart ?? '00:00';
 const byTime = (a: ScheduledActionView, b: ScheduledActionView) => startOf(a).localeCompare(startOf(b)) || a.title.localeCompare(b.title);

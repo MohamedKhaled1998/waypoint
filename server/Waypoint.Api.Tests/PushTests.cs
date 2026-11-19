@@ -51,7 +51,7 @@ public sealed class PushTests(WaypointApiFactory factory) : PlanTestBase(factory
             // The message's owner is the signed-in user of the scope: the job runner's way of acting for a user.
             var me = await c.GetFromJsonAsync<JsonElement>("/me");
             scope.ServiceProvider.GetRequiredService<Waypoint.Api.Auth.CurrentUser>().Override = me.GetProperty("id").GetGuid();
-            await scope.ServiceProvider.GetRequiredService<CoachMessenger>().PostUnpromptedAsync(new GateDecision.Send(), aspirationId, "How did the run go?", CancellationToken.None);
+            await scope.ServiceProvider.GetRequiredService<CoachMessenger>().PostUnpromptedAsync(aspirationId, "How did the run go?", CancellationToken.None);
         }
         await RunJobsAsync();
 
@@ -78,7 +78,7 @@ public sealed class PushTests(WaypointApiFactory factory) : PlanTestBase(factory
         {
             var me = await c.GetFromJsonAsync<JsonElement>("/me");
             scope.ServiceProvider.GetRequiredService<Waypoint.Api.Auth.CurrentUser>().Override = me.GetProperty("id").GetGuid();
-            await scope.ServiceProvider.GetRequiredService<CoachMessenger>().PostUnpromptedAsync(new GateDecision.Send(), aspirationId, "Hello again", CancellationToken.None);
+            await scope.ServiceProvider.GetRequiredService<CoachMessenger>().PostUnpromptedAsync(aspirationId, "Hello again", CancellationToken.None);
         }
         await RunJobsAsync();
         Assert.Single(SentTo(token));
