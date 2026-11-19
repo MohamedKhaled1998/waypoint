@@ -22,6 +22,7 @@ export const en = {
     restTitle: 'Rest days are part of your Plan',
     restBody: 'Nothing is planned for today. Enjoy it.',
     minutes: '{{count}} min',
+    target: 'aim for {{count}} min',
     state: { done: 'Done', partly: 'Partly', skipped: 'Skipped', skip: 'Skip' },
     result: { done: 'Done', skipped: 'Skipped', partly: 'Partly · {{minutes}} of {{planned}} min' },
     undo: 'Undo',
@@ -83,6 +84,20 @@ export const en = {
   battery: {
     banner: "Reminders may not be reaching you. Your phone may be putting Waypoint to sleep: turn off battery optimisation for it.",
     open: 'Open battery settings',
+  },
+  aspiration: {
+    title: 'Aspiration',
+    habits: {
+      tab: 'Habits',
+      empty: 'No habits in your Plan yet.',
+      anchor: 'Anchor · {{words}}, around {{time}}',
+      slot: '{{slot}}',
+      target: 'aim for {{count}} min',
+      lastSeven: '{{count}} of the last 7 days',
+      reminderOn: 'Reminder on',
+      reminderOff: 'Reminder off',
+      dot: { done: 'Done', partly: 'Partly', skipped: 'Skipped', missed: 'Not reported', open: 'Tonight', none: 'Not planned' },
+    },
   },
   progress: {
     emptyTitle: 'No Aspirations yet',

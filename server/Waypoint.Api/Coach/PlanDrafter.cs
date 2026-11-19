@@ -46,6 +46,10 @@ public sealed class PlanDrafter(WaypointDb db, JobQueue jobs, ICoachModelClient 
             ["aspiration"] = handOff["aspiration"]?.DeepClone(),
         };
 
+        // Anchor habits the user's other Aspirations already hold count toward "about four across all".
+        var otherAnchors = await db.Habits.CountAsync(h => h.AnchorId != null
+            && db.PlanVersions.Any(p => p.Id == h.PlanVersionId && p.Status == PlanVersionStatus.Approved && p.AspirationId != aspirationId), ct);
+
         var choice = options.Value.For(CoachCallKind.Plan);
         var turns = new List<CoachTurn> { new("user", brief.ToJsonString()) };
         JsonObject? plan = null;
@@ -59,7 +63,7 @@ public sealed class PlanDrafter(WaypointDb db, JobQueue jobs, ICoachModelClient 
             if (full.Length == 0) throw new CoachUnavailableException("empty_reply");
 
             plan = ParseJson(full.ToString());
-            problems = PlanRules.Validate(plan, slots, start, aspiration.SettleForDate);
+            problems = PlanRules.Validate(plan, slots, start, aspiration.SettleForDate, otherAnchors);
             if (problems.Count == 0) break;
             log.LogInformation("Plan draft for Aspiration {AspirationId} rejected on attempt {Attempt}: {Problems}",
                 aspirationId, attempt, string.Join(",", problems));
@@ -102,16 +106,15 @@ public sealed class PlanDrafter(WaypointDb db, JobQueue jobs, ICoachModelClient 
                 ReachedWhen = HandOff.Str(m, "reached_when")!, Kind = HandOff.Str(m, "kind")!, State = "upcoming",
             });
         }
+        var anchorIds = new Dictionary<string, Guid>();
         foreach (var h in plan["habits"]!.AsArray().Select(h => h!.AsObject()))
         {
             var habitId = habitIds[HandOff.Str(h, "title")!] = Guid.NewGuid();
-            db.Habits.Add(new Habit
-            {
-                Id = habitId, UserId = aspiration.UserId, PlanVersionId = version.Id, Title = HandOff.Str(h, "title")!,
-                TimesPerWeek = (int)HandOff.Num(h, "times_per_week")!.Value, Minutes = (int)HandOff.Num(h, "minutes")!.Value,
-                SlotIds = string.Join(",", h["slots"]!.AsArray().Select(s => byLabel[s!.GetValue<string>()].Id)),
-            });
+            db.Habits.Add(NewHabit(h, habitId, aspiration.UserId, version.Id, byLabel, anchorIds, start, out var anchor));
+            if (anchor is not null) db.Anchors.Add(anchor);
         }
+        // Anchor habits held back wait in the queue: one is added at a time, at a refresh.
+        aspiration.AnchorQueueJson = plan["anchor_later"] is JsonArray { Count: > 0 } later ? later.ToJsonString() : null;
         foreach (var t in plan["tasks"]!.AsArray().Select(t => t!.AsObject()))
         {
             var taskId = taskIds[HandOff.Str(t, "title")!] = Guid.NewGuid();
@@ -129,7 +132,8 @@ public sealed class PlanDrafter(WaypointDb db, JobQueue jobs, ICoachModelClient 
         {
             var copy = (JsonObject)a.DeepClone();
             var title = HandOff.Str(a, "action")!;
-            copy["slotId"] = byLabel[HandOff.Str(a, "slot")!].Id;
+            if (HandOff.Str(a, "anchor") is { } words) copy["anchorId"] = anchorIds[words];
+            else copy["slotId"] = byLabel[HandOff.Str(a, "slot")!].Id;
             if (HandOff.Str(a, "kind") == "habit" && habitIds.TryGetValue(title, out var hid)) copy["habitId"] = hid;
             if (HandOff.Str(a, "kind") == "task" && taskIds.TryGetValue(title, out var tid)) copy["taskId"] = tid;
             window.Add(copy);
@@ -147,6 +151,41 @@ public sealed class PlanDrafter(WaypointDb db, JobQueue jobs, ICoachModelClient 
         jobs.Add(JobKinds.PushMessage, aspiration.UserId, new Dictionary<string, Guid> { ["chatMessageId"] = proposal.Id }, aspiration.Id);
         await db.SaveChangesAsync(ct);
         log.LogInformation("Plan version {PlanVersionId} proposed for Aspiration {AspirationId}", version.Id, aspiration.Id);
+    }
+
+    /// <summary>
+    /// A habit row from the Coach's habit object. An Anchor habit also creates its Anchor (the user confirms it by approving the Plan);
+    /// <paramref name="anchorIds"/> remembers each Anchor by its words so the window's Actions find it.
+    /// </summary>
+    internal static Habit NewHabit(JsonObject h, Guid id, Guid userId, Guid versionId, Dictionary<string, Slot> byLabel,
+        Dictionary<string, Guid> anchorIds, DateOnly since, out Anchor? created)
+    {
+        created = null;
+        var habit = new Habit
+        {
+            Id = id, UserId = userId, PlanVersionId = versionId, Title = HandOff.Str(h, "title")!,
+            TimesPerWeek = (int)HandOff.Num(h, "times_per_week")!.Value, Minutes = 0, SlotIds = "", Since = since,
+            PrepFor = HandOff.Str(h, "prep_for"),
+        };
+        if (h["anchor"] is JsonObject a)
+        {
+            var words = HandOff.Str(a, "words")!;
+            var anchor = created = new Anchor
+            {
+                Id = Guid.NewGuid(), UserId = userId, Words = words, Time = HandOff.Str(a, "time")!,
+                Days = string.Join(",", (a["days"] as JsonArray ?? []).Select(d => d!.GetValue<string>())),
+            };
+            anchorIds[words] = anchor.Id;
+            habit.AnchorId = anchor.Id;
+            habit.TargetMinutes = HandOff.Num(h, "target_minutes") is { } t ? (int)t : null;
+            habit.FullTimesPerWeek = HandOff.Num(h, "full_times_per_week") is { } f ? (int)f : habit.TimesPerWeek;
+        }
+        else
+        {
+            habit.Minutes = (int)HandOff.Num(h, "minutes")!.Value;
+            habit.SlotIds = string.Join(",", h["slots"]!.AsArray().Select(s => byLabel[s!.GetValue<string>()].Id));
+        }
+        return habit;
     }
 
     /// <summary>The first JSON object in a reply, with or without a code fence around it.</summary>

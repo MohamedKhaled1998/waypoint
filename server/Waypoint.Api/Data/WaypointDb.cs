@@ -18,6 +18,7 @@ public sealed class WaypointDb(DbContextOptions<WaypointDb> options, CurrentUser
     public DbSet<Waypoint.Api.Push.DeviceToken> DeviceTokens => Set<Waypoint.Api.Push.DeviceToken>();
     public DbSet<PlanVersion> PlanVersions => Set<PlanVersion>();
     public DbSet<Milestone> Milestones => Set<Milestone>();
+    public DbSet<Anchor> Anchors => Set<Anchor>();
     public DbSet<Habit> Habits => Set<Habit>();
     public DbSet<PlanTask> PlanTasks => Set<PlanTask>();
     public DbSet<ScheduledAction> ScheduledActions => Set<ScheduledAction>();
@@ -215,6 +216,7 @@ public sealed class WaypointDb(DbContextOptions<WaypointDb> options, CurrentUser
             e.HasOne<PlanVersion>().WithMany().HasForeignKey(a => a.PlanVersionId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne<Aspiration>().WithMany().HasForeignKey(a => a.AspirationId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne<Slot>().WithMany().HasForeignKey(a => a.SlotId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<Anchor>().WithMany().HasForeignKey(a => a.AnchorId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne<User>().WithMany().HasForeignKey(a => a.UserId);
             e.HasQueryFilter(a => a.UserId == CurrentUserId);
         });
@@ -247,6 +249,17 @@ public sealed class WaypointDb(DbContextOptions<WaypointDb> options, CurrentUser
             e.HasOne<User>().WithMany().HasForeignKey(r => r.UserId).OnDelete(DeleteBehavior.Cascade);
             e.HasQueryFilter(r => r.UserId == CurrentUserId);
         });
+        b.Entity<Anchor>(e =>
+        {
+            e.Property(a => a.Words).HasMaxLength(120);
+            e.Property(a => a.Time).HasMaxLength(5);
+            e.Property(a => a.Days).HasMaxLength(32);
+            e.HasOne<User>().WithMany().HasForeignKey(a => a.UserId);
+            e.HasQueryFilter(a => a.UserId == CurrentUserId);
+        });
+        b.Entity<Habit>().Property(h => h.PrepFor).HasMaxLength(200);
+        b.Entity<Habit>().Property(h => h.ReminderOn).HasDefaultValue(true);
+        b.Entity<Aspiration>().Property(a => a.AnchorQueueJson).HasColumnType("longtext");
         b.Entity<ScheduledAction>().Property(a => a.MoveClientIds).HasMaxLength(1024);
         b.Entity<ScheduledAction>().Property(a => a.ReminderKind).HasMaxLength(16);
         b.Entity<ScheduledAction>().Property(a => a.ReminderText).HasMaxLength(300);

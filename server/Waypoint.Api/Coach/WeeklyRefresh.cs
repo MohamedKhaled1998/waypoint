@@ -108,6 +108,7 @@ public static class WeeklyRefreshes
         var slots = await db.Slots.ToDictionaryAsync(s => s.Id, ct);
         var pauses = await db.Pauses.ToListAsync(ct);
         // Set-aside Actions count neither as done nor missed, so they are not asked about.
+        var anchors = await db.Anchors.ToDictionaryAsync(x => x.Id, ct);
         var unreported = (await db.ScheduledActions.Where(a => a.Date >= from && a.Date <= opened
                 && !db.CheckIns.Any(c => c.ScheduledActionId == a.Id))
             .OrderBy(a => a.Date).ThenBy(a => a.Title).ToListAsync(ct)).Where(a => !Pauses.IsSetAside(pauses, a, false)).ToList();
@@ -116,7 +117,7 @@ public static class WeeklyRefreshes
         // Property order is the order the phone shows them: the "did it" list comes first.
         return new
         {
-            Unreported = unreported.Select(a => Plans.ActionView(a, slots.GetValueOrDefault(a.SlotId), null)),
+            Unreported = unreported.Select(a => Plans.ActionView(a, a.SlotId is { } sid ? slots.GetValueOrDefault(sid) : null, null, a.AnchorId is { } aid ? anchors.GetValueOrDefault(aid) : null)),
             r.Id, r.Status, r.OpenedAt, r.AutoApplyAt,
             Proposals = proposals.Select(p => new
             {
@@ -130,7 +131,18 @@ public static class WeeklyRefreshes
 public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ICoachModelClient model, IOptions<CoachOptions> options, TimeProvider clock,
     ILogger<WeeklyRefreshRunner> log)
 {
-    private sealed record H(Guid OldId, string Title, int Times, int Minutes, List<Guid> SlotIds);
+    /// <summary>A habit as the refresh works on it. Anchor habits have no Slots and no minutes of their own: <c>Old</c> carries the rest.</summary>
+    private sealed record H(Guid OldId, string Title, int Times, int Minutes, List<Guid> SlotIds, Habit Old)
+    {
+        public bool IsAnchor => Old.AnchorId is not null;
+    }
+
+    private int anchorHabitsInAll;
+
+    /// <summary>A refresh falls a day or two short of a whole number of weeks, so "about two weeks" is 12 days.</summary>
+    public const int AnchorHeldDays = 12;
+    /// <summary>About three weeks (21 days) on target before the Coach offers to stop an Anchor habit's reminder.</summary>
+    public const int ReminderOfferDays = 21;
 
     public async Task RunAsync(Guid refreshId, CancellationToken ct)
     {
@@ -151,8 +163,12 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ICoachMode
         // Minutes already taken in each Slot on each day, by what the refresh keeps: other Aspirations and Check-ins already made.
         var plannedIds = planned.Select(a => a.Id).ToHashSet();
         var used = new Dictionary<(DateOnly, Guid), int>();
-        foreach (var a in await db.ScheduledActions.Where(a => a.Date >= start && (!plannedIds.Contains(a.AspirationId) || db.CheckIns.Any(c => c.ScheduledActionId == a.Id))).ToListAsync(ct))
-            used[(a.Date, a.SlotId)] = used.GetValueOrDefault((a.Date, a.SlotId)) + a.Minutes;
+        foreach (var a in await db.ScheduledActions.Where(a => a.SlotId != null && a.Date >= start && (!plannedIds.Contains(a.AspirationId) || db.CheckIns.Any(c => c.ScheduledActionId == a.Id))).ToListAsync(ct))
+            used[(a.Date, a.SlotId!.Value)] = used.GetValueOrDefault((a.Date, a.SlotId.Value)) + a.Minutes;
+
+        // Anchor habits held across all Aspirations right now: "about four across all".
+        var currentIds = currents.Select(p => p.Id).ToList();
+        anchorHabitsInAll = await db.Habits.CountAsync(h => h.AnchorId != null && currentIds.Contains(h.PlanVersionId), ct);
 
         var made = new List<PlanVersion>();
         foreach (var aspiration in planned)
@@ -187,7 +203,7 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ICoachMode
         var oldHabits = await db.Habits.Where(h => h.PlanVersionId == current.Id).OrderBy(h => h.Title).ToListAsync(ct);
         var oldTasks = await db.PlanTasks.Where(t => t.PlanVersionId == current.Id).OrderBy(t => t.Title).ToListAsync(ct);
         var habits = oldHabits.Select(h => new H(h.Id, h.Title, h.TimesPerWeek, h.Minutes,
-            h.SlotIds.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(Guid.Parse).ToList())).ToList();
+            h.SlotIds.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(Guid.Parse).ToList(), h)).ToList();
 
         // First week back from a Pause: one notch lower instead of any ramp; a Catch-up starts in week two.
         var returned = pauses.Where(p => IsFirstWeekBack(p, aspiration.Id, now)).ToList();
@@ -202,9 +218,55 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ICoachMode
         }
         else if (mostly.All(m => m))
         {
-            var weekly = habits.Sum(h => h.Times * h.Minutes);
+            var weekly = habits.Where(h => !h.IsAnchor).Sum(h => h.Times * h.Minutes); // Anchor habits are outside the Time budget
             var step = RampOne(habits, slots, full, weekly);
             if (step is not null) changes.Add(step);
+        }
+
+        // Anchor habits: outside the Time budget. A new one joins at most once a refresh, alone; otherwise one ramps by count.
+        var anchors = await db.Anchors.ToDictionaryAsync(x => x.Id, ct);
+        var today = start.AddDays(-1);
+        var (share, band) = Progress.Tolerance(await ReportedAsync(aspiration.Id, today, ct), today);
+        var anchorHabits = habits.Where(h => h.IsAnchor).ToList();
+        var pending = NextQueued(aspiration, habits);
+        if (pending is not null && band == "absorb" && anchorHabits.Count < PlanRules.MaxAnchorHabitsPerAspiration
+            && anchorHabitsInAll < PlanRules.MaxAnchorHabitsInAll
+            && anchorHabits.All(h => h.Old.Since is { } since && today.DayNumber - since.DayNumber >= AnchorHeldDays))
+        {
+            var fresh = PlanDrafter.NewHabit(pending, Guid.NewGuid(), aspiration.UserId, Guid.Empty, new(), new(), start, out var anchor);
+            db.Anchors.Add(anchor!);
+            anchors[anchor!.Id] = anchor;
+            habits.Add(new H(Guid.Empty, fresh.Title, fresh.TimesPerWeek, 0, [], fresh));
+            anchorHabitsInAll++;
+            changes.Add(Change("add_anchor_habit", fresh.Title, "times_per_week", 0, fresh.TimesPerWeek));
+        }
+        else if (changes.Count == 0)
+        {
+            foreach (var h in anchorHabits.OrderBy(h => h.Title, StringComparer.Ordinal))
+                if (h.Times < (h.Old.FullTimesPerWeek ?? h.Times) && await KeptUpAsync(aspiration.Id, h.Title, today, 2, ct))
+                {
+                    habits[habits.IndexOf(h)] = h with { Times = h.Times + 1 };
+                    changes.Add(Change("ramp_session", h.Title, "times_per_week", h.Times, h.Times + 1));
+                    break;
+                }
+        }
+
+        // Reminders on Anchor habits: offered off once after ~3 weeks on target; back if a habit the user let go of slips.
+        var reminders = new Dictionary<string, (bool On, bool Offered, bool ByOffer)>();
+        foreach (var h in anchorHabits)
+        {
+            var o = h.Old;
+            if (!o.ReminderOn && o.StoppedByOffer && !await KeptUpAsync(aspiration.Id, h.Title, today, 1, ct))
+            {
+                reminders[h.Title] = (true, o.StopOffered, false);
+                changes.Add(Change("reminder_returns", h.Title, "reminder_on", 0, 1));
+            }
+            else if (o.ReminderOn && !o.StopOffered && o.Since is { } since && today.DayNumber - since.DayNumber >= ReminderOfferDays
+                && await KeptUpAsync(aspiration.Id, h.Title, today, 3, ct))
+            {
+                reminders[h.Title] = (true, true, false);
+                changes.Add(Change("offer_stop_reminder", h.Title, "reminder_on", 1, 0));
+            }
         }
 
         var version = new PlanVersion
@@ -224,7 +286,11 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ICoachMode
         var habitRows = habits.Select(h => (H: h, New: new Habit
         {
             Id = Guid.NewGuid(), UserId = aspiration.UserId, PlanVersionId = version.Id, Title = h.Title, TimesPerWeek = h.Times, Minutes = h.Minutes,
-            SlotIds = string.Join(",", h.SlotIds),
+            SlotIds = string.Join(",", h.SlotIds), AnchorId = h.Old.AnchorId, TargetMinutes = h.Old.TargetMinutes, FullTimesPerWeek = h.Old.FullTimesPerWeek,
+            PrepFor = h.Old.PrepFor, Since = h.Old.Since,
+            ReminderOn = reminders.TryGetValue(h.Title, out var rs) ? rs.On : h.Old.ReminderOn,
+            StopOffered = reminders.TryGetValue(h.Title, out rs) ? rs.Offered : h.Old.StopOffered,
+            StoppedByOffer = reminders.TryGetValue(h.Title, out rs) ? rs.ByOffer : h.Old.StoppedByOffer,
         })).ToList();
 
         // Reminders carry over: a habit's new sessions keep how its latest one was set.
@@ -233,13 +299,14 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ICoachMode
             .GroupBy(a => a.Title).ToDictionary(g => g.Key, g => g.First());
 
         var window = new JsonArray();
-        JsonObject Entry(DateOnly date, Slot slot, string title, string kind, int minutes, Guid? habitId, Guid? taskId, ScheduledAction? like)
+        JsonObject Entry(DateOnly date, Slot? slot, string title, string kind, int minutes, Guid? habitId, Guid? taskId, ScheduledAction? like)
         {
             var o = new JsonObject
             {
-                ["date"] = date.ToString("yyyy-MM-dd"), ["slot"] = slot.Label, ["slotId"] = slot.Id, ["action"] = title, ["kind"] = kind, ["minutes"] = minutes,
+                ["date"] = date.ToString("yyyy-MM-dd"), ["action"] = title, ["kind"] = kind, ["minutes"] = minutes,
                 ["reminder"] = like?.ReminderKind ?? ReminderKinds.Now,
             };
+            if (slot is not null) { o["slot"] = slot.Label; o["slotId"] = slot.Id; }
             if (like?.ReminderKind == ReminderKinds.GetReady) o["lead_minutes"] = like.ReminderLeadMinutes ?? ReminderKinds.DefaultLeadMinutes;
             if (habitId is not null) o["habitId"] = habitId;
             if (taskId is not null) o["taskId"] = taskId;
@@ -249,6 +316,18 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ICoachMode
         foreach (var (h, row) in habitRows)
             for (var week = 0; week < 2; week++)
             {
+                if (h.IsAnchor)
+                {
+                    var anchor = anchors[h.Old.AnchorId!.Value];
+                    foreach (var date in SpreadOnAnchor(h.Times, anchor, start.AddDays(7 * week)))
+                    {
+                        var e = Entry(date, null, h.Title, "habit", 0, row.Id, null, lastReminder.GetValueOrDefault(h.Title));
+                        e["anchorId"] = anchor.Id;
+                        e["anchor"] = anchor.Words;
+                        window.Add(e);
+                    }
+                    continue;
+                }
                 var days = Spread(h, slots, used, start.AddDays(7 * week), out var chosen);
                 foreach (var date in days)
                 {
@@ -283,7 +362,7 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ICoachMode
             ["last_two_weeks_mostly_done"] = new JsonArray(mostly.Select(m => (JsonNode)m).ToArray()),
             ["first_week_back"] = returned.Count > 0,
             ["return_choice"] = returned.Select(p => p.ReturnChoice).FirstOrDefault(c => c is not null),
-            ["at_full_share"] = habits.Sum(h => h.Times * h.Minutes) >= full,
+            ["at_full_share"] = habits.Where(h => !h.IsAnchor).Sum(h => h.Times * h.Minutes) >= full,
             ["changes"] = new JsonArray(changes.Select(c => (JsonNode)new JsonObject { ["code"] = c["code"]!.GetValue<string>(), ["what"] = c["title"]!.GetValue<string>(), ["field"] = c["field"]!.GetValue<string>() }).ToArray()),
         };
         var (rationale, reasons) = await PhraseAsync(brief, changes.Select(c => c["code"]!.GetValue<string>()).ToList(), ct);
@@ -306,6 +385,33 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ICoachMode
         db.Habits.AddRange(habitRows.Select(r => r.New));
         db.PlanTasks.AddRange(taskRows);
         return version;
+    }
+
+    /// <summary>The first queued Anchor habit (the Coach's "later" list from the Plan) the Plan does not hold yet.</summary>
+    private static JsonObject? NextQueued(Aspiration aspiration, List<H> habits)
+    {
+        if (aspiration.AnchorQueueJson is null) return null;
+        var held = habits.Select(h => h.Title).ToHashSet();
+        return (JsonNode.Parse(aspiration.AnchorQueueJson) as JsonArray)?.OfType<JsonObject>().FirstOrDefault(q => HandOff.Str(q, "title") is { } t && !held.Contains(t));
+    }
+
+    private async Task<List<Reported>> ReportedAsync(Guid aspirationId, DateOnly today, CancellationToken ct) =>
+        (await db.ScheduledActions.Where(a => a.AspirationId == aspirationId && a.Date > today.AddDays(-14) && a.Date <= today)
+            .Select(a => new Reported(a.Date, a.Minutes, db.CheckIns.Where(c => c.ScheduledActionId == a.Id).Select(c => c.State).FirstOrDefault(),
+                db.CheckIns.Where(c => c.ScheduledActionId == a.Id).Select(c => c.MinutesSpent).FirstOrDefault(), a.AnchorId != null)).ToListAsync(ct));
+
+    /// <summary>Each of the last <paramref name="weeks"/> weeks had sessions of this habit and at least 80% of them were done or partly.</summary>
+    private async Task<bool> KeptUpAsync(Guid aspirationId, string title, DateOnly today, int weeks, CancellationToken ct)
+    {
+        foreach (var week in Enumerable.Range(0, weeks))
+        {
+            var from = today.AddDays(-7 * (week + 1));
+            var to = today.AddDays(-7 * week);
+            var states = await db.ScheduledActions.Where(a => a.AspirationId == aspirationId && a.Title == title && a.Date > from && a.Date <= to)
+                .Select(a => db.CheckIns.Where(c => c.ScheduledActionId == a.Id).Select(c => c.State).FirstOrDefault()).ToListAsync(ct);
+            if (states.Count == 0 || states.Count(x => x is CheckInState.Done or CheckInState.Partly) < WeeklyRefreshes.MostlyDone * states.Count) return false;
+        }
+        return true;
     }
 
     private async Task<bool> MostlyDoneAsync(Guid aspirationId, DateOnly from, DateOnly toExclusive, List<Pause> pauses, CancellationToken ct)
@@ -332,6 +438,7 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ICoachMode
         for (var i = 0; i < habits.Count; i++)
         {
             var h = habits[i];
+            if (h.IsAnchor) continue;
             var days = h.SlotIds.Where(slots.ContainsKey).SelectMany(id => slots[id].Days.Split(',')).Distinct().Count();
             if (h.Times >= days || weekly + h.Minutes > full) continue;
             habits[i] = h with { Times = h.Times + 1 };
@@ -340,6 +447,7 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ICoachMode
         for (var i = 0; i < habits.Count; i++)
         {
             var h = habits[i];
+            if (h.IsAnchor) continue;
             var room = h.SlotIds.Where(slots.ContainsKey).Select(id => (int)PlanRules.Room(slots[id])).DefaultIfEmpty(0).Min();
             var more = Math.Min(WeeklyRefreshes.MinutesStep, Math.Min((int)((full - weekly) / Math.Max(h.Times, 1)), room - h.Minutes));
             if (more < 1) continue;
@@ -389,6 +497,14 @@ public sealed class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, ICoachMode
         }
         if (days.Count <= h.Times) return days;
         return Enumerable.Range(0, h.Times).Select(i => days[i * days.Count / h.Times]).ToList();
+    }
+
+    /// <summary>The days of one week an Anchor habit meets: on days the Anchor applies, spread evenly.</summary>
+    private static List<DateOnly> SpreadOnAnchor(int times, Anchor anchor, DateOnly weekStart)
+    {
+        var applies = anchor.Days.Split(',', StringSplitOptions.RemoveEmptyEntries);
+        var days = Enumerable.Range(0, 7).Select(weekStart.AddDays).Where(d => applies.Length == 0 || applies.Contains(PlanRules.Day(d))).ToList();
+        return days.Count <= times ? days : Enumerable.Range(0, times).Select(i => days[i * days.Count / times]).ToList();
     }
 
     private static (DateOnly Date, Slot Slot)? PlaceTask(PlanTask t, Dictionary<Guid, Slot> slots, Dictionary<(DateOnly, Guid), int> used, DateOnly start, DateOnly end)

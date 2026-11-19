@@ -18,6 +18,16 @@ public static class PlanPrompt
           never past the Settle-for date.
         - Habits: recurring Actions that belong to the whole Plan. Cadence is "N times a week", each session with
           minutes, placed on the user's Slots.
+        - Anchor habits: a behaviour habit that takes no Slot time ("walk after dinner", "eat at home") lives on an
+          Anchor instead: a moment in the user's routine, in their words, with a usual time they confirm and optional
+          days. Only habits go on Anchors; tasks stay in Slots. Give it "anchor": {"words", "time": "HH:mm", "days"
+          optional}, "times_per_week" (starting count, at most the Anchor's days), "full_times_per_week" (where the
+          count ramps to), optional "target_minutes" ("walk 20 min"), and no "slots" or "minutes". Anchor habits are
+          outside the Time budget. Start with exactly one per Aspiration; put at most one more, for later, in
+          "anchor_later" (the app adds it at a refresh once the first has held about two weeks). If a habit needs
+          prep (meal prep for "eat at home"), make the prep its own habit on a Slot, inside the Time budget, with
+          "prep_for" set to the Anchor habit's title. In first_two_weeks an Anchor habit's Action has "anchor" (the
+          Anchor's words) instead of "slot", and minutes 0.
         - Tasks: one-off Actions that belong to a Milestone, with minutes and a date or "this_week".
         - Rolling window: lay out concrete Actions only for the first two weeks from the start date. Later Milestones
           are just a date and a "reached when" line for now.
@@ -47,10 +57,15 @@ public static class PlanPrompt
         {
           "rationale": "",
           "milestones": [{ "id": "m1", "title": "", "date": "YYYY-MM-DD", "kind": "effort | ability", "reached_when": "" }],
-          "habits": [{ "title": "", "times_per_week": 0, "minutes": 0, "slots": ["slot label"] }],
+          "habits": [
+            { "title": "", "times_per_week": 0, "minutes": 0, "slots": ["slot label"], "prep_for": "optional Anchor habit title" },
+            { "title": "", "times_per_week": 0, "full_times_per_week": 0, "target_minutes": 0,
+              "anchor": { "words": "", "time": "HH:mm", "days": ["mon"] } }
+          ],
+          "anchor_later": [],
           "tasks": [{ "title": "", "milestone": "m1", "minutes": 0, "due": "YYYY-MM-DD | this_week" }],
           "first_two_weeks": [
-            { "date": "YYYY-MM-DD", "slot": "slot label", "action": "title of a habit or task", "kind": "habit | task", "minutes": 0, "reminder": "now | get_ready", "lead_minutes": 60 }
+            { "date": "YYYY-MM-DD", "slot": "slot label", "action": "title of a habit or task", "kind": "habit | task", "minutes": 0, "anchor": "(Anchor habits only, instead of slot)", "reminder": "now | get_ready", "lead_minutes": 60 }
           ],
           "ramp": "how it steps up from here",
           "assumptions": []

@@ -6,7 +6,7 @@ import { Button } from '../ui/Button';
 import { Text } from '../ui/Text';
 import type { SlotView } from './offline';
 import { FEELING_CHIPS, SKIP_CHIPS, STOPPED_SHORT_CHIPS, createActionSheet, moveOptions, partlyChips } from './sheet';
-import type { CheckInRequest, CheckInState, ScheduledActionView } from './today';
+import { timeLabel, type CheckInRequest, type CheckInState, type ScheduledActionView } from './today';
 import type { PauseScope, PauseUntil } from '../pause/pause';
 
 const FEW_DAYS = [2, 3, 5, 7] as const;
@@ -74,7 +74,11 @@ function Sheet({ action, initialChoice, onClose, onSubmit, slots, onMove, now, o
       <View style={styles.sheet}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <Text variant="heading">{action.title}</Text>
-          <Text muted>{t('today.sheet.meta', { time: action.slotStart ?? '', minutes: action.minutes })}</Text>
+          <Text muted>
+            {action.anchor
+              ? [timeLabel(action), action.targetMinutes ? t('today.target', { count: action.targetMinutes }) : null].filter(Boolean).join(' · ')
+              : t('today.sheet.meta', { time: action.slotStart ?? '', minutes: action.minutes })}
+          </Text>
 
           {s.step === 1 && !notToday && !moving ? (
             <>

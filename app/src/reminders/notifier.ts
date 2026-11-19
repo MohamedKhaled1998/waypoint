@@ -10,6 +10,8 @@ export type ArmedReminder = {
   title: string;
   body: string | null;
   data: ReminderData;
+  /** An Anchor reminder stays in the shade (not swiped away by tapping) so a late Check-in is still one tap. */
+  sticky: boolean;
 };
 
 /** The phone's notification scheduler, small so the arming rules can be tested without the native module. */
@@ -24,7 +26,8 @@ export interface Notifier {
 /** Re-arms from the cache: drops what was armed and arms the next moments, so a changed Action is never stale. */
 export async function arm(notifier: Notifier, groups: ReminderGroup[]) {
   await notifier.cancelAll();
+  // A group rings together, at its first reminder.
   for (const g of groups)
     for (const r of g.reminders)
-      await notifier.schedule({ groupKey: g.key, at: r.at, title: r.title, body: r.text, data: { actionId: r.actionId } });
+      await notifier.schedule({ groupKey: g.key, at: g.at, title: r.title, body: r.text, data: { actionId: r.actionId }, sticky: r.anchor });
 }

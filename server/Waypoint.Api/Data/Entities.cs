@@ -115,6 +115,8 @@ public sealed class Aspiration
     public DateOnly HopedForDate { get; set; }
     public DateOnly? SettleForDate { get; set; }
     public string? SettleForPicture { get; set; }
+    /// <summary>Anchor habits the Plan draft held back, as JSON, to be added one at a time at a refresh.</summary>
+    public string? AnchorQueueJson { get; set; }
     /// <summary>gentle_check, quiet_replan or ask_why.</summary>
     public required string OnSkip { get; set; }
     public DateTime CreatedAt { get; set; }
@@ -242,8 +244,36 @@ public sealed class Habit
     public required string Title { get; set; }
     public int TimesPerWeek { get; set; }
     public int Minutes { get; set; }
-    /// <summary>Comma-separated Slot IDs.</summary>
+    /// <summary>Comma-separated Slot IDs; empty for an Anchor habit.</summary>
     public required string SlotIds { get; set; }
+    /// <summary>The Anchor an Anchor habit is tied to. Such a habit takes no Slot time and stays out of the Time budget and Pace.</summary>
+    public Guid? AnchorId { get; set; }
+    /// <summary>Optional target duration of an Anchor habit ("walk 20 min"); tracked through Check-ins, never planned time.</summary>
+    public int? TargetMinutes { get; set; }
+    /// <summary>The ceiling the ramp-by-count stops at for an Anchor habit.</summary>
+    public int? FullTimesPerWeek { get; set; }
+    /// <summary>For a prep habit on a Slot: the title of the Anchor habit it supports.</summary>
+    public string? PrepFor { get; set; }
+    /// <summary>When the habit first appeared in the Plan; carried over by every version.</summary>
+    public DateOnly? Since { get; set; }
+    public bool ReminderOn { get; set; } = true;
+    /// <summary>The Coach has offered once to stop this habit's reminder.</summary>
+    public bool StopOffered { get; set; }
+    /// <summary>The reminder was stopped by accepting that offer, so a refresh may bring it back if the habit slips.</summary>
+    public bool StoppedByOffer { get; set; }
+}
+
+/// <summary>A moment in the user's routine ("after dinner, around 19:30") that habits are tied to. User-owned.</summary>
+public sealed class Anchor
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    /// <summary>The user's words.</summary>
+    public required string Words { get; set; }
+    /// <summary>HH:mm: the usual time the user confirms.</summary>
+    public required string Time { get; set; }
+    /// <summary>Comma-separated mon..sun; empty means every day.</summary>
+    public string Days { get; set; } = "";
 }
 
 /// <summary>A one-off Action on a Milestone, with a date or, when <see cref="DueDate"/> is null, "this week".</summary>
@@ -268,7 +298,13 @@ public sealed class ScheduledAction
     public Guid? HabitId { get; set; }
     public Guid? TaskId { get; set; }
     public DateOnly Date { get; set; }
-    public Guid SlotId { get; set; }
+    /// <summary>Null for an Anchor habit, which has <see cref="AnchorId"/> instead.</summary>
+    public Guid? SlotId { get; set; }
+    public Guid? AnchorId { get; set; }
+    /// <summary>An Anchor habit's optional target duration.</summary>
+    public int? TargetMinutes { get; set; }
+    /// <summary>A skipped prep put this night at risk: the Coach is told, never the user blamed.</summary>
+    public bool AtRisk { get; set; }
     public required string Title { get; set; }
     public int Minutes { get; set; }
     /// <summary>Comma-separated client IDs of the latest moves, so a replayed move is idempotent.</summary>

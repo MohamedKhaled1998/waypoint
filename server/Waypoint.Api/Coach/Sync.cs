@@ -39,6 +39,7 @@ public static class Sync
 
         var slots = await db.Slots.ToListAsync(ct);
         var pauses = await db.Pauses.ToListAsync(ct);
+        var anchors = await db.Anchors.ToDictionaryAsync(x => x.Id, ct);
         var actions = await db.ScheduledActions.Where(a => actionIds.Contains(a.Id)).ToDictionaryAsync(a => a.Id, ct);
         var checkIns = await db.CheckIns.Where(c => actionIds.Contains(c.ScheduledActionId)).ToDictionaryAsync(c => c.ScheduledActionId, ct);
         var messages = await db.ChatMessages.Where(m => messageIds.Contains(m.Id)).ToDictionaryAsync(m => m.Id, ct);
@@ -50,7 +51,7 @@ public static class Sync
         object? Data(Change c) => c.Kind switch
         {
             "scheduled_action" => actions.TryGetValue(c.EntityId, out var a)
-                ? Plans.ActionView(a, slots.FirstOrDefault(s => s.Id == a.SlotId), checkIns.GetValueOrDefault(a.Id),
+                ? Plans.ActionView(a, slots.FirstOrDefault(s => s.Id == a.SlotId), checkIns.GetValueOrDefault(a.Id), anchors.GetValueOrDefault(a.AnchorId ?? Guid.Empty),
                     Pauses.IsSetAside(pauses, a, checkIns.ContainsKey(a.Id))) : null,
             "chat_message" => messages.TryGetValue(c.EntityId, out var m) ? CoachChat.View(m, answered.Contains(m.Id)) : null,
             "milestone" => milestones.TryGetValue(c.EntityId, out var ms)
@@ -84,6 +85,8 @@ public static class Sync
         var action = await db.ScheduledActions.FirstOrDefaultAsync(a => a.Id == id, ct);
         var slot = await db.Slots.FirstOrDefaultAsync(s => s.Id == req.SlotId, ct);
         if (action is null || slot is null) return Results.NotFound();
+        // An Anchor habit stays at its Anchor's usual time: only Slot Actions move to a Slot.
+        if (action.AnchorId is not null) return Results.BadRequest();
         // A resend of any move already applied changes nothing, so a replay can't undo a newer move.
         var applied = (action.MoveClientIds ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries);
         if (!applied.Contains(req.ClientId))
@@ -95,6 +98,6 @@ public static class Sync
             await db.SaveChangesAsync(ct);
         }
         var checkIn = await db.CheckIns.FirstOrDefaultAsync(c => c.ScheduledActionId == id, ct);
-        return Results.Ok(Plans.ActionView(action, slot, checkIn, await Pauses.IsSetAsideAsync(db, action, checkIn is not null, ct)));
+        return Results.Ok(Plans.ActionView(action, slot, checkIn, null, await Pauses.IsSetAsideAsync(db, action, checkIn is not null, ct)));
     }
 }

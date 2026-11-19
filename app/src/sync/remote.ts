@@ -45,6 +45,8 @@ export function httpRemote(auth: Auth): Remote {
           return outcome(await call('/pauses', 'POST', { ...item.payload, clientId: item.clientId }));
         case 'resume':
           return outcome(await call(`/pauses/by-client/${encodeURIComponent(p(item).pauseClientId)}/resume`, 'POST'));
+        case 'habit_reminder':
+          return outcome(await call(`/habits/${p(item).habitId}/reminder`, 'PUT', { on: p(item).on, fromOffer: p(item).fromOffer }));
         case 'approve_plan':
           return outcome(await call(`/plan-versions/${p(item).versionId}/approve`, 'POST'));
         case 'message': {

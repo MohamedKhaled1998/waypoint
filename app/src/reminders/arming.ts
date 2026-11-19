@@ -1,7 +1,7 @@
 import type { ScheduledActionView } from '../today/today';
 
 /** One reminder: what rings, for which Action, and when. */
-export type Reminder = { actionId: string; at: Date; title: string; text: string | null; aspirationId: string };
+export type Reminder = { actionId: string; at: Date; title: string; text: string | null; aspirationId: string; anchor: boolean };
 
 /** Reminders due at the same moment: one notification group with a child per Action. */
 export type ReminderGroup = { key: string; at: Date; reminders: Reminder[] };
@@ -15,6 +15,10 @@ export type ReminderGroup = { key: string; at: Date; reminders: Reminder[] };
  */
 export const MOMENTS_AHEAD = 40;
 export const DEFAULT_LEAD_MINUTES = 60;
+/** An Anchor reminder joins any reminder due within this long of its group's first. */
+export const GROUP_WINDOW_MINUTES = 30;
+
+export const isAnchorAction = (a: ScheduledActionView) => !!a.anchor;
 
 const minuteOf = (d: Date) => Math.floor(d.getTime() / 60_000);
 
@@ -44,21 +48,28 @@ export function upcomingReminders(actions: ScheduledActionView[], now: Date): Re
     if (a.reminderOn === false || a.checkIn || a.setAside) continue;
     const at = reminderTime(a);
     if (!at || at.getTime() <= now.getTime()) continue;
-    out.push({ actionId: a.id, at, title: a.title, text: a.reminderText ?? null, aspirationId: a.aspirationId });
+    out.push({ actionId: a.id, at, title: a.title, text: a.reminderText ?? null, aspirationId: a.aspirationId, anchor: isAnchorAction(a) });
   }
   return out.sort((x, y) => x.at.getTime() - y.at.getTime() || x.actionId.localeCompare(y.actionId));
 }
 
-/** Reminders due in the same minute share a group. */
+/**
+ * Reminders due in the same minute share a group. An Anchor reminder also joins a group whose first reminder is due
+ * within ~30 minutes of it (or, as the first, takes later ones within that window), so an evening's habits arrive as
+ * one notification with a child each.
+ */
 export function groupByMoment(reminders: Reminder[]): ReminderGroup[] {
-  const groups = new Map<number, ReminderGroup>();
-  for (const r of reminders) {
-    const m = minuteOf(r.at);
-    const g = groups.get(m) ?? { key: `moment-${m}`, at: r.at, reminders: [] };
-    g.reminders.push(r);
-    groups.set(m, g);
+  const groups: (ReminderGroup & { anchor: boolean })[] = [];
+  for (const r of [...reminders].sort((x, y) => x.at.getTime() - y.at.getTime())) {
+    const near = groups.find(
+      (g) => minuteOf(g.at) === minuteOf(r.at) || ((g.anchor || r.anchor) && minuteOf(r.at) - minuteOf(g.at) <= GROUP_WINDOW_MINUTES),
+    );
+    if (near) {
+      near.reminders.push(r);
+      near.anchor ||= r.anchor;
+    } else groups.push({ key: `moment-${minuteOf(r.at)}`, at: r.at, reminders: [r], anchor: r.anchor });
   }
-  return [...groups.values()].sort((a, b) => a.at.getTime() - b.at.getTime());
+  return groups.map(({ key, at, reminders }) => ({ key, at, reminders }));
 }
 
 /** What to have armed right now: the next MOMENTS_AHEAD moments, so a dead app still rings the ones after. */

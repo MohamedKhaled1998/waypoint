@@ -117,6 +117,7 @@ app.MapCoachChat();
 app.MapInterviews();
 app.MapPlans();
 app.MapWeeklyRefreshes();
+app.MapProgress();
 app.MapCheckIns();
 app.MapSync();
 app.MapPushes();

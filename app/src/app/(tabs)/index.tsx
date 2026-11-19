@@ -112,7 +112,7 @@ export default function TodayScreen() {
                   })}
                 </Text>
               ) : null}
-              <AspirationChips aspirations={plans} />
+              <AspirationChips aspirations={plans} onOpen={(a) => router.push({ pathname: '/aspiration', params: { id: a.aspirationId } })} />
             </View>
 
             {today.nowCard ? (
