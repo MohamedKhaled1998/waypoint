@@ -142,6 +142,7 @@ public static class Plans
         // The reminder text is written after approval, so a slow or failing model never holds up the Plan.
         jobs.Add(JobKinds.ReminderText, version.UserId, new Dictionary<string, Guid> { ["planVersionId"] = id }, version.AspirationId);
         if (BudgetCuts.IsCut(version.Reason)) await BudgetCuts.OnApprovedAsync(db, jobs, clock, version, ct);
+        if (version.Reason == Settings.BudgetChangeReason) await BudgetChangeApprovedAsync(db, version, ct);
         // The first approved Plan books the first Weekly refresh, after the Plan's first day.
         if (version.Reason == "first_plan")
             await Silence.TouchAsync(db, jobs, clock, ct); // the user just approved their first Plan: silence counts from here
@@ -150,6 +151,22 @@ public static class Plans
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return Results.Ok(await ViewAsync(db, version, ct));
+    }
+
+    /// <summary>An approved Time budget change moves the Aspiration's share, and the budget to what the user asked for.</summary>
+    private static async Task BudgetChangeApprovedAsync(WaypointDb db, PlanVersion version, CancellationToken ct)
+    {
+        var aspiration = await db.Aspirations.FirstAsync(a => a.Id == version.AspirationId, ct);
+        if (version.ShareAfterHours is { } share) aspiration.ShareHoursPerWeek = share;
+        var user = await db.Users.SingleAsync(ct);
+        if (user.RequestedTimeBudgetHours is { } hours)
+        {
+            if (user.TimeBudgetHours is > 0 and var old && old != hours) await Settings.ScaleUnplannedSharesAsync(db, hours / old, ct);
+            user.TimeBudgetHours = hours;
+        }
+        // The request is done once no other Aspiration's proposal of it still waits for a tap.
+        if (!await db.PlanVersions.AnyAsync(p => p.Reason == Settings.BudgetChangeReason && p.Status == PlanVersionStatus.Proposed && p.Id != version.Id, ct))
+            user.RequestedTimeBudgetHours = null;
     }
 
     /// <summary>Every version after the first Plan lays out its window anew, from its start on, keeping only Actions already checked in.</summary>

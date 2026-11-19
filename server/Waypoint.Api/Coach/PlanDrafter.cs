@@ -131,6 +131,7 @@ public sealed class PlanDrafter(WaypointDb db, JobQueue jobs, ICoachModelClient 
         // Conditional, so a proposal approved a moment ago is not overwritten.
         await db.PlanVersions.Where(p => p.AspirationId == aspiration.Id && p.Status == PlanVersionStatus.Proposed)
             .ExecuteUpdateAsync(s => s.SetProperty(p => p.Status, PlanVersionStatus.Replaced), ct);
+        await Settings.ClearStaleBudgetRequestAsync(db, ct);
 
         var byLabel = slots.GroupBy(s => s.Label).ToDictionary(g => g.Key, g => g.First());
         var habitIds = new Dictionary<string, Guid>();

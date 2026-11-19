@@ -10,6 +10,7 @@ public sealed class WaypointDb(DbContextOptions<WaypointDb> options, CurrentUser
 
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
     public DbSet<Slot> Slots => Set<Slot>();
+    public DbSet<SlotEdit> SlotEdits => Set<SlotEdit>();
     public DbSet<Aspiration> Aspirations => Set<Aspiration>();
     public DbSet<Interview> Interviews => Set<Interview>();
     public DbSet<InterviewMessage> InterviewMessages => Set<InterviewMessage>();
@@ -103,6 +104,16 @@ public sealed class WaypointDb(DbContextOptions<WaypointDb> options, CurrentUser
         });
         b.Entity<User>().Property(u => u.ContactFrequency).HasMaxLength(16);
         b.Entity<Slot>(e =>
+        {
+            e.Property(s => s.Label).HasMaxLength(64);
+            e.Property(s => s.Days).HasMaxLength(32);
+            e.Property(s => s.Start).HasMaxLength(5);
+            e.Property(s => s.End).HasMaxLength(5);
+            e.HasIndex(s => s.UserId);
+            e.HasOne<User>().WithMany().HasForeignKey(s => s.UserId);
+            e.HasQueryFilter(s => s.UserId == CurrentUserId);
+        });
+        b.Entity<SlotEdit>(e =>
         {
             e.Property(s => s.Label).HasMaxLength(64);
             e.Property(s => s.Days).HasMaxLength(32);

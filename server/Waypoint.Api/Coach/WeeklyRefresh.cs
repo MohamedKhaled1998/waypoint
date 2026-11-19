@@ -26,7 +26,8 @@ public static class RefreshPrompt
         ```
         Give a reason for every code in "changes".
 
-        When the brief carries "why", the week was not changed by a refresh: "time_budget_cut" means the user told you
+        When the brief carries "why", the week was not changed by a refresh: "time_budget_change" means the user changed their Time budget in Settings and the app proposes a Plan that fits it;
+        "time_budget_cut" means the user told you
         work is heavy and the app proposes a temporary smaller Time budget until a date; "time_budget_restore" means
         that cut has ended and the Plan goes back to what it was. Say that, not a refresh.
         """;
@@ -155,6 +156,8 @@ public sealed partial class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, IC
         var refresh = await db.WeeklyRefreshes.FirstOrDefaultAsync(r => r.Id == refreshId, ct);
         if (refresh is null || refresh.Status != RefreshStatus.Scheduled) return;
         var now = clock.GetUtcNow().UtcDateTime;
+        await Settings.ApplySlotEditsAsync(db, ct); // Slot edits take effect from here
+        await db.SaveChangesAsync(ct);
         // An Aspiration paused right now is left alone: nothing to propose until the user is back.
         var (start, slots, planned, currents, pauses, used) = await PrepareAsync(now, respectPauses: true, only: null, ct);
 
@@ -398,6 +401,7 @@ public sealed partial class WeeklyRefreshRunner(WaypointDb db, JobQueue jobs, IC
         // At most one pending proposal per Aspiration: this one replaces any other.
         await db.PlanVersions.Where(p => p.AspirationId == aspiration.Id && p.Status == PlanVersionStatus.Proposed)
             .ExecuteUpdateAsync(s => s.SetProperty(p => p.Status, PlanVersionStatus.Replaced), ct);
+        if (reason != Settings.BudgetChangeReason) await Settings.ClearStaleBudgetRequestAsync(db, ct);
         db.PlanVersions.Add(version);
         db.Milestones.AddRange(newMilestones);
         db.Habits.AddRange(habitRows.Select(r => r.New));

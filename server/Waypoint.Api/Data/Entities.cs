@@ -24,6 +24,10 @@ public sealed class User
     public string QuietStart { get; set; } = "21:30";
     /// <summary>... until here. Default 21:30-07:00; reminders for the user's own Slots ignore it.</summary>
     public string QuietEnd { get; set; } = "07:00";
+    /// <summary>A Time budget the user asked for in Settings, waiting for the Coach's Re-plan to be approved; null when none.</summary>
+    public double? RequestedTimeBudgetHours { get; set; }
+    /// <summary>Whether the phone last reported exact alarms as allowed; null until it has reported.</summary>
+    public bool? ExactAlarmsAllowed { get; set; }
 }
 
 public static class RefreshStatus
@@ -101,6 +105,23 @@ public sealed class Slot
     /// <summary>HH:mm.</summary>
     public required string Start { get; set; }
     public required string End { get; set; }
+}
+
+/// <summary>
+/// A Slot edit or new Slot the user made in Settings. It waits here and is applied by the next Weekly refresh, so the Plan
+/// the user approved is not moved under them. User-owned.
+/// </summary>
+public sealed class SlotEdit
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    /// <summary>The Slot being changed; null for a new Slot.</summary>
+    public Guid? SlotId { get; set; }
+    public required string Label { get; set; }
+    public required string Days { get; set; }
+    public required string Start { get; set; }
+    public required string End { get; set; }
+    public DateTime CreatedAt { get; set; }
 }
 
 public sealed class Aspiration

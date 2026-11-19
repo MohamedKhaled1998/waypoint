@@ -817,6 +817,48 @@ namespace Waypoint.Api.Data.Migrations
                     b.ToTable("Slots");
                 });
 
+            modelBuilder.Entity("Waypoint.Api.Data.SlotEdit", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Days")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<string>("End")
+                        .IsRequired()
+                        .HasMaxLength(5)
+                        .HasColumnType("varchar(5)");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<Guid?>("SlotId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Start")
+                        .IsRequired()
+                        .HasMaxLength(5)
+                        .HasColumnType("varchar(5)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("char(36)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("SlotEdits");
+                });
+
             modelBuilder.Entity("Waypoint.Api.Data.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -829,6 +871,9 @@ namespace Waypoint.Api.Data.Migrations
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime(6)");
+
+                    b.Property<bool?>("ExactAlarmsAllowed")
+                        .HasColumnType("tinyint(1)");
 
                     b.Property<string>("GoogleSub")
                         .IsRequired()
@@ -861,6 +906,9 @@ namespace Waypoint.Api.Data.Migrations
                         .HasMaxLength(5)
                         .HasColumnType("varchar(5)")
                         .HasDefaultValue("18:00");
+
+                    b.Property<double?>("RequestedTimeBudgetHours")
+                        .HasColumnType("double");
 
                     b.Property<DateTime?>("SetupAt")
                         .HasColumnType("datetime(6)");
@@ -1128,6 +1176,15 @@ namespace Waypoint.Api.Data.Migrations
                 });
 
             modelBuilder.Entity("Waypoint.Api.Data.Slot", b =>
+                {
+                    b.HasOne("Waypoint.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Waypoint.Api.Data.SlotEdit", b =>
                 {
                     b.HasOne("Waypoint.Api.Data.User", null)
                         .WithMany()
