@@ -19,7 +19,8 @@ export type PauseView = {
 
 export type PauseScope = { aspirationId?: string; actionId?: string };
 /** "Not today" ends at midnight; "a few days" counts today as the first day. */
-export type PauseUntil = 'today' | 'open' | { days: number };
+/** `{ on }`: the last paused day, "YYYY-MM-DD" (a Pause the Coach suggested from what the user said). */
+export type PauseUntil = 'today' | 'open' | { days: number } | { on: string };
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const localDate = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -68,11 +69,15 @@ export function createOfflinePause(deps: { storage: Storage; sync: Sync; now: ()
   }
 
   return {
-    async start(scope: PauseScope, until: PauseUntil) {
+    /** `clientId` is given when a card from the Coach starts it, so the same tap never starts two. */
+    async start(scope: PauseScope, until: PauseUntil, clientId?: string) {
       const now = deps.now();
       const today = localDate(now);
-      const endsOn = typeof until === 'object' ? addDays(today, Math.max(1, Math.floor(until.days)) - 1) : until === 'today' ? today : null;
-      const id = deps.newId();
+      const endsOn =
+        typeof until === 'object' ? ('on' in until ? until.on : addDays(today, Math.max(1, Math.floor(until.days)) - 1)) : until === 'today' ? today : null;
+      const id = clientId ?? deps.newId();
+      const known = clientId ? (await active()).find((p) => p.clientId === id) : undefined;
+      if (known) return known;
       const pause: PauseView = {
         id, clientId: id, aspirationId: scope.aspirationId ?? null, actionId: scope.actionId ?? null,
         startsAt: now.toISOString(),

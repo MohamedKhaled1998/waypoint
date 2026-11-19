@@ -112,7 +112,7 @@ public static class Plans
 
         // A refresh rolls the window: what it planned from its start on replaces what was planned, except Actions already checked in.
         var kept = new HashSet<(DateOnly, string)>();
-        if (version.Reason == WeeklyRefreshes.Reason)
+        if (RollsWindow(version.Reason))
         {
             var future = await db.ScheduledActions.Where(a => a.AspirationId == version.AspirationId && a.Date >= version.StartDate && a.PlanVersionId != id).ToListAsync(ct);
             var checkedIn = await db.CheckIns.Where(c => future.Select(a => a.Id).Contains(c.ScheduledActionId)).Select(c => c.ScheduledActionId).ToListAsync(ct);
@@ -141,6 +141,7 @@ public static class Plans
         }
         // The reminder text is written after approval, so a slow or failing model never holds up the Plan.
         jobs.Add(JobKinds.ReminderText, version.UserId, new Dictionary<string, Guid> { ["planVersionId"] = id }, version.AspirationId);
+        if (BudgetCuts.IsCut(version.Reason)) await BudgetCuts.OnApprovedAsync(db, jobs, clock, version, ct);
         // The first approved Plan books the first Weekly refresh, after the Plan's first day.
         if (version.Reason == "first_plan")
             await Silence.TouchAsync(db, jobs, clock, ct); // the user just approved their first Plan: silence counts from here
@@ -150,6 +151,9 @@ public static class Plans
         await tx.CommitAsync(ct);
         return Results.Ok(await ViewAsync(db, version, ct));
     }
+
+    /// <summary>Every version after the first Plan lays out its window anew, from its start on, keeping only Actions already checked in.</summary>
+    private static bool RollsWindow(string reason) => reason != "first_plan";
 
     private static int LeadFrom(JsonObject a)
     {

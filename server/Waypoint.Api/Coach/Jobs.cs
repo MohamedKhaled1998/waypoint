@@ -16,6 +16,12 @@ public static class JobKinds
     public const string RefreshPrompt = "refresh_prompt";
     public const string WelcomeBack = "welcome_back";
     public const string SilenceCheck = "silence_check";
+    /// <summary>Proposes a temporary Time budget cut from a chat message.</summary>
+    public const string BudgetCut = "budget_cut";
+    /// <summary>Ends a cut: restores the Plan.</summary>
+    public const string BudgetRestore = "budget_restore";
+    /// <summary>Drafts a Re-plan from a chat message.</summary>
+    public const string RePlan = "re_plan";
 }
 
 /// <summary>Adds jobs. Payloads are row IDs only, so no free text can reach the jobs table.</summary>
@@ -103,6 +109,15 @@ public sealed class JobRunner(IServiceScopeFactory scopes, TimeProvider clock, I
                     break;
                 case JobKinds.SilenceCheck:
                     await sp.GetRequiredService<SilenceChecker>().CheckAsync(ct);
+                    break;
+                case JobKinds.BudgetCut:
+                    await sp.GetRequiredService<WeeklyRefreshRunner>().ProposeCutAsync(ids["chatMessageId"], ct);
+                    break;
+                case JobKinds.BudgetRestore:
+                    await sp.GetRequiredService<WeeklyRefreshRunner>().RestoreAsync(ids["planVersionId"], ct);
+                    break;
+                case JobKinds.RePlan:
+                    await sp.GetRequiredService<PlanDrafter>().RePlanAsync(ids["chatMessageId"], ids["aspirationId"], ct);
                     break;
                 default:
                     throw new InvalidOperationException("unknown_job_kind");

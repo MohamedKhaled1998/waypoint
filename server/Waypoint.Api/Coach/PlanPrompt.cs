@@ -73,6 +73,17 @@ public static class PlanPrompt
         ```
         """;
 
+    /// <summary>Added to the Plan prompt for a Re-plan the user asked for in chat.</summary>
+    public const string RePlan = """
+
+
+        ## This is a Re-plan
+        The user already has a Plan (in "current_plan") and has asked for a change ("change_request", their own words).
+        Redraw the Plan with that change and keep everything they did not ask to change. Say in the rationale what changed
+        and why, in two or three sentences. It is a proposal: nothing changes until the user approves it. The same rules
+        apply, and Milestone dates stay put unless the change cannot work without moving them.
+        """;
+
     public static string Rejected(IEnumerable<string> problems) =>
         "[The app rejected this Plan: " + string.Join(", ", problems) +
         ". Reply again with the corrected Plan as one fenced json block and nothing else.]";

@@ -86,6 +86,8 @@ public sealed class ChatMessage
     public string? Card { get; set; }
     /// <summary>The card's data as JSON.</summary>
     public string? CardJson { get; set; }
+    /// <summary>On a user message: what the Coach read in it (a Pause suggestion, a budget cut, a Re-plan), as JSON with no free text.</summary>
+    public string? IntentJson { get; set; }
 }
 
 /// <summary>A recurring window the user is free: one day-and-time window. User-owned.</summary>
@@ -217,6 +219,13 @@ public sealed class PlanVersion
     public string? ChangesJson { get; set; }
     /// <summary>Approved by the server after a day without an answer, not by the user.</summary>
     public bool AutoApplied { get; set; }
+    /// <summary>A temporary Time budget cut: the last day it holds. The day after, a new version restores the Plan.</summary>
+    public DateOnly? RevertOn { get; set; }
+    /// <summary>On a cut: the Aspiration's share of the Time budget before and during the cut, in hours a week.</summary>
+    public double? ShareBeforeHours { get; set; }
+    public double? ShareAfterHours { get; set; }
+    /// <summary>On a cut: the approved version it was cut from, whose habit minutes a restore brings back.</summary>
+    public Guid? SourceVersionId { get; set; }
 }
 
 public sealed class Milestone

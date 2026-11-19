@@ -172,6 +172,9 @@ namespace Waypoint.Api.Data.Migrations
                     b.Property<Guid?>("InReplyToId")
                         .HasColumnType("char(36)");
 
+                    b.Property<string>("IntentJson")
+                        .HasColumnType("longtext");
+
                     b.Property<string>("Role")
                         .IsRequired()
                         .HasMaxLength(8)
@@ -624,6 +627,18 @@ namespace Waypoint.Api.Data.Migrations
                         .HasColumnType("varchar(32)");
 
                     b.Property<Guid?>("RefreshId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateOnly?>("RevertOn")
+                        .HasColumnType("date");
+
+                    b.Property<double?>("ShareAfterHours")
+                        .HasColumnType("double");
+
+                    b.Property<double?>("ShareBeforeHours")
+                        .HasColumnType("double");
+
+                    b.Property<Guid?>("SourceVersionId")
                         .HasColumnType("char(36)");
 
                     b.Property<DateOnly>("StartDate")
