@@ -17,10 +17,13 @@ export function useInterview() {
     [session.status],
   );
   const state = useSyncExternalStore(iv.subscribe, iv.getState);
+  // Set once the server has been asked whether an unfinished Interview exists (not when it could not be reached).
+  const [opened, setOpened] = useState(false);
   useEffect(() => {
-    iv.open().catch(() => {});
+    setOpened(false);
+    iv.open().then(() => setOpened(true)).catch(() => {});
   }, [iv]);
-  return { ...state, begin: iv.begin, send: iv.send, retry: iv.retry, chooseShortName: iv.chooseShortName, correct: iv.correct, confirm: iv.confirm };
+  return { ...state, opened, begin: iv.begin, send: iv.send, retry: iv.retry, chooseShortName: iv.chooseShortName, correct: iv.correct, confirm: iv.confirm };
 }
 
 /** Whether an unfinished Interview exists (null while unknown), for the card on Today. */

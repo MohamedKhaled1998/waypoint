@@ -94,7 +94,9 @@ public static class Scheduling
         var all = others.Where(a => !removing.Contains(a.Id)).Select(a => (Action: a, Fixed: checkedIn.Contains(a.Id)))
             .Concat(kept.Where(a => !removing.Contains(a.Id)).Select(a => (Action: a, Fixed: true)))
             .Concat(added.Select(a => (Action: a, Fixed: false)))
-            .Select(x => new Candidate(x.Action.Id, x.Action.AspirationId, x.Action.Date, x.Action.SlotId, x.Action.Minutes, x.Fixed))
+            // Anchor habits take no Slot time, so they never compete for a Slot.
+            .Where(x => x.Action.SlotId is not null)
+            .Select(x => new Candidate(x.Action.Id, x.Action.AspirationId, x.Action.Date, x.Action.SlotId!.Value, x.Action.Minutes, x.Fixed))
             .ToList();
 
         var slots = await db.Slots.ToListAsync(ct);

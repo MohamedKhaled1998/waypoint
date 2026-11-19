@@ -21,9 +21,11 @@ public static class Sync
     /// The changes after <paramref name="cursor"/>, one per row (the latest wins), each with the row as it is now or a
     /// deleted mark. The cursor to send next time comes back with them; <c>more</c> says to pull again straight away.
     /// </summary>
-    private static async Task<IResult> Pull(long? cursor, WaypointDb db, CancellationToken ct)
+    private static async Task<IResult> Pull(long? cursor, WaypointDb db, JobQueue jobs, TimeProvider clock, CancellationToken ct)
     {
         var from = cursor ?? 0;
+        await Silence.TouchAsync(db, jobs, clock, ct); // the phone pulls when the app opens
+        await db.SaveChangesAsync(ct);
         var page = await db.Changes.Where(c => c.Seq > from).OrderBy(c => c.Seq).Take(PageSize + 1).ToListAsync(ct);
         var more = page.Count > PageSize;
         if (more) page.RemoveAt(PageSize);
@@ -36,6 +38,9 @@ public static class Sync
         var versionIds = latest.Where(c => c.Kind == "plan_version").Select(c => c.EntityId).ToList();
 
         var slots = await db.Slots.ToListAsync(ct);
+        var onSkip = await db.Aspirations.ToDictionaryAsync(a => a.Id, a => a.OnSkip, ct);
+        var pauses = await db.Pauses.ToListAsync(ct);
+        var anchors = await db.Anchors.ToDictionaryAsync(x => x.Id, ct);
         var actions = await db.ScheduledActions.Where(a => actionIds.Contains(a.Id)).ToDictionaryAsync(a => a.Id, ct);
         var checkIns = await db.CheckIns.Where(c => actionIds.Contains(c.ScheduledActionId)).ToDictionaryAsync(c => c.ScheduledActionId, ct);
         var messages = await db.ChatMessages.Where(m => messageIds.Contains(m.Id)).ToDictionaryAsync(m => m.Id, ct);
@@ -47,7 +52,9 @@ public static class Sync
         object? Data(Change c) => c.Kind switch
         {
             "scheduled_action" => actions.TryGetValue(c.EntityId, out var a)
-                ? Plans.ActionView(a, slots.FirstOrDefault(s => s.Id == a.SlotId), checkIns.GetValueOrDefault(a.Id)) : null,
+                ? Plans.ActionView(a, slots.FirstOrDefault(s => s.Id == a.SlotId), checkIns.GetValueOrDefault(a.Id), onSkip: onSkip.GetValueOrDefault(a.AspirationId),
+                    anchor: anchors.GetValueOrDefault(a.AnchorId ?? Guid.Empty),
+                    setAside: Pauses.IsSetAside(pauses, a, checkIns.ContainsKey(a.Id))) : null,
             "chat_message" => messages.TryGetValue(c.EntityId, out var m) ? CoachChat.View(m, answered.Contains(m.Id)) : null,
             "milestone" => milestones.TryGetValue(c.EntityId, out var ms)
                 ? new Plans.MilestoneView(ms.Id, ms.Date, ms.Title, ms.ReachedWhen, ms.Kind, ms.State) : null,
@@ -64,6 +71,7 @@ public static class Sync
         return Results.Ok(new
         {
             Cursor = next, More = more, Changes = changes,
+            Pauses = pauses.Where(p => Pauses.IsActive(p, clock.GetUtcNow().UtcDateTime)).Select(Pauses.View),
             Slots = slots.Select(s => new { s.Id, s.Label, s.Days, s.Start, s.End }),
         });
     }
@@ -79,6 +87,8 @@ public static class Sync
         var action = await db.ScheduledActions.FirstOrDefaultAsync(a => a.Id == id, ct);
         var slot = await db.Slots.FirstOrDefaultAsync(s => s.Id == req.SlotId, ct);
         if (action is null || slot is null) return Results.NotFound();
+        // An Anchor habit stays at its Anchor's usual time: only Slot Actions move to a Slot.
+        if (action.AnchorId is not null) return Results.BadRequest();
         // A resend of any move already applied changes nothing, so a replay can't undo a newer move.
         var applied = (action.MoveClientIds ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries);
         if (!applied.Contains(req.ClientId))
@@ -90,6 +100,6 @@ public static class Sync
             await db.SaveChangesAsync(ct);
         }
         var checkIn = await db.CheckIns.FirstOrDefaultAsync(c => c.ScheduledActionId == id, ct);
-        return Results.Ok(Plans.ActionView(action, slot, checkIn));
+        return Results.Ok(Plans.ActionView(action, slot, checkIn, setAside: await Pauses.IsSetAsideAsync(db, action, checkIn is not null, ct)));
     }
 }

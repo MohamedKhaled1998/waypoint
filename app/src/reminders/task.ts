@@ -11,7 +11,7 @@ import { handleReminderResponse, type ReminderResponse } from './headless';
 import { expoNotifier } from './native';
 import { acceptRefresh } from '../push/native';
 import { handleRefreshResponse, type RefreshResponse } from '../push/push';
-import { rearmReminders } from './rearm';
+import { noteInteraction, rearmReminders } from './rearm';
 
 export const REMINDER_TASK = 'waypoint-reminder-response';
 
@@ -20,7 +20,7 @@ TaskManager.defineTask<Notifications.NotificationTaskPayload>(REMINDER_TASK, asy
   if (error || !data || !('actionIdentifier' in data)) return;
   const session = createSession(keystoreStorage, httpAuth);
   // "Looks good" on the weekly refresh prompt shares this task: it answers its own button and leaves the rest.
-  const auth = { getAccessToken: session.getAccessToken, renewAccess: () => session.restore().catch(() => false) };
+  const auth = { getAccessToken: session.getAccessToken, renewAccess: () => session.renew().catch(() => false) };
   const refresh = await handleRefreshResponse(data as unknown as RefreshResponse, {
     accept: (id) => acceptRefresh(auth, id),
     dismiss: (id) => expoNotifier.dismiss(id),
@@ -28,7 +28,7 @@ TaskManager.defineTask<Notifications.NotificationTaskPayload>(REMINDER_TASK, asy
   if (refresh !== 'ignored') return;
   const sync = createSync({
     storage: phoneStorage,
-    remote: httpRemote({ getAccessToken: session.getAccessToken, renewAccess: () => session.restore().catch(() => false) }),
+    remote: httpRemote({ getAccessToken: session.getAccessToken, renewAccess: () => session.renew().catch(() => false) }),
     now: () => new Date(),
     newId: () => `c-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
   });
@@ -37,7 +37,10 @@ TaskManager.defineTask<Notifications.NotificationTaskPayload>(REMINDER_TASK, asy
     now: () => new Date(),
     newId: () => `ci-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
     dismiss: (id) => expoNotifier.dismiss(id),
-    rearm: () => rearmReminders(),
+    rearm: () => {
+      noteInteraction(); // a button in the shade is an interaction
+      return rearmReminders();
+    },
   });
   // The send runs behind the enqueue; give it the task's time to land, and re-arm either way.
   await sync.sync();

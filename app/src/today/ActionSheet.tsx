@@ -4,9 +4,13 @@ import { useTranslation } from 'react-i18next';
 import { StyleSheet, useUnistyles } from 'react-native-unistyles';
 import { Button } from '../ui/Button';
 import { Text } from '../ui/Text';
+import { guideSheet } from './guide';
 import type { SlotView } from './offline';
 import { FEELING_CHIPS, SKIP_CHIPS, STOPPED_SHORT_CHIPS, createActionSheet, moveOptions, partlyChips } from './sheet';
-import type { CheckInRequest, CheckInState, ScheduledActionView } from './today';
+import { timeLabel, type CheckInRequest, type CheckInState, type ScheduledActionView } from './today';
+import type { PauseScope, PauseUntil } from '../pause/pause';
+
+const FEW_DAYS = [2, 3, 5, 7] as const;
 
 type Props = {
   action: ScheduledActionView | null;
@@ -15,7 +19,11 @@ type Props = {
   onSubmit: (req: CheckInRequest) => Promise<void>;
   slots: SlotView[];
   onMove: (date: string, slotId: string) => Promise<void>;
+  /** The cached Actions, to count how many times this one was done. */
+  history: ScheduledActionView[];
   now: { date: string; time: string };
+  /** "Not today…": starts a Pause at once, with no approval. */
+  onPause: (scope: PauseScope, until: PauseUntil) => Promise<void>;
 };
 
 function Chip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
@@ -32,7 +40,7 @@ export function ActionSheet({ action, ...rest }: Props) {
   return <Sheet key={action.id + (rest.initialChoice ?? '')} action={action} {...rest} />;
 }
 
-function Sheet({ action, initialChoice, onClose, onSubmit, slots, onMove, now }: Props & { action: ScheduledActionView }) {
+function Sheet({ action, initialChoice, onClose, onSubmit, slots, onMove, now, onPause, history }: Props & { action: ScheduledActionView }) {
   const { t } = useTranslation();
   const { theme } = useUnistyles();
   const sheet = useMemo(() => {
@@ -45,7 +53,10 @@ function Sheet({ action, initialChoice, onClose, onSubmit, slots, onMove, now }:
     fn();
     setTick((n) => n + 1);
   };
+  const how = useMemo(() => guideSheet(action, history), [action, history]);
+  const [howOpen, setHowOpen] = useState(how?.openByItself ?? false);
   const [notToday, setNotToday] = useState(false);
+  const [fewDays, setFewDays] = useState(false);
   const [moving, setMoving] = useState(false);
   const options = useMemo(() => moveOptions(action, slots, now), [action, slots, now]);
   const [failed, setFailed] = useState(false);
@@ -68,7 +79,35 @@ function Sheet({ action, initialChoice, onClose, onSubmit, slots, onMove, now }:
       <View style={styles.sheet}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <Text variant="heading">{action.title}</Text>
-          <Text muted>{t('today.sheet.meta', { time: action.slotStart ?? '', minutes: action.minutes })}</Text>
+          <Text muted>
+            {action.anchor
+              ? [timeLabel(action), action.targetMinutes ? t('today.target', { count: action.targetMinutes }) : null].filter(Boolean).join(' · ')
+              : t('today.sheet.meta', { time: action.slotStart ?? '', minutes: action.minutes })}
+          </Text>
+
+          {how && s.step === 1 && !notToday && !moving ? (
+            <View style={styles.howTo}>
+              <Pressable accessibilityRole="button" accessibilityState={{ expanded: howOpen }} onPress={() => setHowOpen(!howOpen)}>
+                <Text variant="label">{t('today.sheet.howTo')}</Text>
+              </Pressable>
+              {howOpen ? (
+                <>
+                  <Text>{how.guide.body}</Text>
+                  {how.guide.targets.map((g) => (
+                    <Text key={g.what} muted>
+                      {t('today.sheet.howToTarget', { what: g.what, low: g.low, high: g.high, unit: g.unit })} · {g.why}
+                    </Text>
+                  ))}
+                  {how.referralCard ? (
+                    <View style={styles.referral}>
+                      <Text variant="label">{t('today.sheet.referralTitle')}</Text>
+                      <Text>{how.referralCard}</Text>
+                    </View>
+                  ) : null}
+                </>
+              ) : null}
+            </View>
+          ) : null}
 
           {s.step === 1 && !notToday && !moving ? (
             <>
@@ -109,16 +148,25 @@ function Sheet({ action, initialChoice, onClose, onSubmit, slots, onMove, now }:
 
           {s.step === 1 && notToday ? (
             <>
-              <Text variant="label">{t('today.sheet.notTodayTitle')}</Text>
-              {sheet.notTodayScopes.map((scope) => (
-                <Button
-                  key={scope}
-                  kind="secondary"
-                  title={t(`today.sheet.scope.${scope}`)}
-                  onPress={() => void send({ ...sheetSkip(action.id) })}
-                />
-              ))}
-              <Button kind="quiet" title={t('today.sheet.back')} onPress={() => setNotToday(false)} />
+              <Text variant="label">{t(fewDays ? 'today.sheet.fewDaysTitle' : 'today.sheet.notTodayTitle')}</Text>
+              {!fewDays
+                ? sheet.notTodayScopes.map((scope) => (
+                    <Button
+                      key={scope}
+                      kind="secondary"
+                      title={t(`today.sheet.scope.${scope}`)}
+                      onPress={() => {
+                        if (scope === 'fewDays') return setFewDays(true);
+                        const pause = scope === 'thisAction' ? onPause({ actionId: action.id }, 'today') : onPause({}, 'today');
+                        void pause.then(onClose, () => setFailed(true));
+                      }}
+                    />
+                  ))
+                : FEW_DAYS.map((days) => (
+                    <Button key={days} kind="secondary" title={t('pause.days', { count: days })} onPress={() => void onPause({}, { days }).then(onClose, () => setFailed(true))} />
+                  ))}
+              {failed ? <Text style={styles.care}>{t('today.sheet.failed')}</Text> : null}
+              <Button kind="quiet" title={t('today.sheet.back')} onPress={() => (fewDays ? setFewDays(false) : setNotToday(false))} />
             </>
           ) : null}
 
@@ -176,18 +224,6 @@ function Sheet({ action, initialChoice, onClose, onSubmit, slots, onMove, now }:
   );
 }
 
-function sheetSkip(id: string): CheckInRequest {
-  return {
-    scheduledActionId: id,
-    clientId: `ci-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
-    state: 'skipped',
-    minutes: null,
-    reasons: ['not_today'],
-    note: null,
-    tappedAt: new Date().toISOString(),
-  };
-}
-
 const styles = StyleSheet.create((theme) => ({
   scrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
   sheet: {
@@ -197,6 +233,15 @@ const styles = StyleSheet.create((theme) => ({
     maxHeight: '85%',
   },
   content: { padding: theme.space.xl, gap: theme.space.md },
+  howTo: { gap: theme.space.sm },
+  referral: {
+    gap: theme.space.xs,
+    padding: theme.space.md,
+    borderRadius: theme.radii.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.accentTint,
+  },
   tiles: { flexDirection: 'row', gap: theme.space.sm },
   tile: {
     flex: 1,

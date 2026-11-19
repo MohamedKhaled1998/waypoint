@@ -51,28 +51,28 @@ describe('session', () => {
     expect(await storage.get('refreshToken')).toBeNull();
   });
 
-  it('restoring after a restart rotates the stored refresh token', async () => {
+  it('renewing after a restart rotates the stored refresh token', async () => {
     const storage = new MemoryStorage();
     const api = fakeApi();
     await createSession(storage, api).signIn('good');
 
     const restarted = createSession(storage, api);
-    expect(await restarted.restore()).toBe(true);
+    expect(await restarted.renew()).toBe(true);
     expect(restarted.getAccessToken()).toBe('access-2');
     expect(await storage.get('refreshToken')).toBe('refresh-2');
   });
 
-  it('restoring with a refresh token the server no longer accepts signs out and wipes it', async () => {
+  it('renewing with a refresh token the server no longer accepts signs out and wipes it', async () => {
     const storage = new MemoryStorage();
     await storage.set('refreshToken', 'stale');
     const session = createSession(storage, fakeApi());
-    expect(await session.restore()).toBe(false);
+    expect(await session.renew()).toBe(false);
     expect(await storage.get('refreshToken')).toBeNull();
   });
 
-  it('restoring with nothing stored is signed out', async () => {
+  it('renewing with nothing stored is signed out', async () => {
     const session = createSession(new MemoryStorage(), fakeApi());
-    expect(await session.restore()).toBe(false);
+    expect(await session.renew()).toBe(false);
   });
 
   it('signing out revokes on the server and wipes the refresh token', async () => {
@@ -96,6 +96,51 @@ describe('session', () => {
     await session.signIn('good');
     await session.signOut();
     expect(await storage.get('refreshToken')).toBeNull();
+  });
+
+  it('parallel renewals after a 401 share one refresh, so the rotated token is never reused', async () => {
+    const storage = new MemoryStorage();
+    const api = fakeApi();
+    const session = createSession(storage, api);
+    await session.signIn('good');
+
+    const results = await Promise.all([session.renew(), session.renew(), session.renew()]);
+    expect(results).toEqual([true, true, true]);
+    expect(api.issued).toBe(2);
+    expect(session.getAccessToken()).toBe('access-2');
+    expect(await storage.get('refreshToken')).toBe('refresh-2');
+
+    expect(await session.renew()).toBe(true);
+    expect(session.getAccessToken()).toBe('access-3');
+  });
+
+  it('a renewal the server rejects drops the access token and wipes the refresh token', async () => {
+    const storage = new MemoryStorage();
+    const api = fakeApi();
+    const session = createSession(storage, api);
+    await session.signIn('good');
+    api.issued += 1; // the server has moved on: the stored token is no longer current
+
+    expect(await session.renew()).toBe(false);
+    expect(session.getAccessToken()).toBeNull();
+    expect(await storage.get('refreshToken')).toBeNull();
+  });
+
+  it('a renewal that cannot reach the server keeps the session and lets the next one retry', async () => {
+    const storage = new MemoryStorage();
+    const api = fakeApi();
+    const session = createSession(storage, api);
+    await session.signIn('good');
+    const refresh = api.refresh;
+    api.refresh = async () => {
+      throw new Error('offline');
+    };
+
+    await expect(session.renew()).rejects.toThrow('offline');
+    expect(await storage.get('refreshToken')).toBe('refresh-1');
+
+    api.refresh = refresh;
+    expect(await session.renew()).toBe(true);
   });
 
   it('signing out wipes the cache and outbox, even when the server cannot be reached', async () => {

@@ -4,6 +4,7 @@ import { clearGoogleAccount, getGoogleIdToken } from './google';
 import { keystoreStorage } from './secureStorage';
 import { createPhoneSync, phoneStorage, type PhoneSync } from '../sync/phone';
 import { forgetPushToken } from '../push/native';
+import { firstRun } from '../firstrun/native';
 import { createSession } from './session';
 
 type Status = 'loading' | 'signedOut' | 'signedIn';
@@ -25,14 +26,14 @@ const SessionContext = createContext<Value | null>(null);
 export function SessionProvider({ children }: { children: ReactNode }) {
   const session = useMemo(() => createSession(keystoreStorage, httpAuth, () => phoneStorage.wipe()), []);
   const phone = useMemo(
-    () => createPhoneSync({ getAccessToken: session.getAccessToken, renewAccess: () => session.restore().catch(() => false) }),
+    () => createPhoneSync({ getAccessToken: session.getAccessToken, renewAccess: () => session.renew().catch(() => false) }),
     [session],
   );
   const [status, setStatus] = useState<Status>('loading');
 
   useEffect(() => {
     session
-      .restore()
+      .renew()
       .then((ok) => setStatus(ok ? 'signedIn' : 'signedOut'))
       // The server is out of reach: a kept session starts from the cache, and the access token renews on the first call.
       .catch(async () => setStatus((await session.hasStoredSession().catch(() => false)) ? 'signedIn' : 'signedOut'));
@@ -42,7 +43,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     () => ({
       status,
       getAccessToken: session.getAccessToken,
-      renewAccess: () => session.restore().catch(() => false),
+      async renewAccess() {
+        try {
+          const ok = await session.renew();
+          // The server rejected the refresh token: the phone is wiped, so show sign-in.
+          if (!ok) setStatus('signedOut');
+          return ok;
+        } catch {
+          // Offline: keep the session and let the call fail; the next 401 tries again.
+          return false;
+        }
+      },
       phone,
       async signIn() {
         try {
@@ -56,8 +67,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         }
       },
       async signOut() {
-        await forgetPushToken({ getAccessToken: session.getAccessToken, renewAccess: () => session.restore().catch(() => false) });
+        await forgetPushToken({ getAccessToken: session.getAccessToken, renewAccess: () => session.renew().catch(() => false) });
         await session.signOut();
+        await firstRun.reset();
         await clearGoogleAccount();
         setStatus('signedOut');
       },

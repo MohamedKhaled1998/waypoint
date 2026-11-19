@@ -16,6 +16,18 @@ public sealed class User
     public DayOfWeek RefreshDay { get; set; } = DayOfWeek.Sunday;
     /// <summary>HH:mm, UTC like every other time the server keeps; default 18:00.</summary>
     public string RefreshTime { get; set; } = "18:00";
+    /// <summary>The last Check-in, message or app open; silence is counted from here.</summary>
+    public DateTime? LastActiveAt { get; set; }
+    /// <summary>How far the silence ladder has gone since LastActiveAt: 0 none, 1 gentle nudge, 2 nudge offering a Pause, 3 auto-Pause.</summary>
+    public int SilenceStage { get; set; }
+    /// <summary>HH:mm, UTC: unprompted Coach messages wait from here...</summary>
+    public string QuietStart { get; set; } = "21:30";
+    /// <summary>... until here. Default 21:30-07:00; reminders for the user's own Slots ignore it.</summary>
+    public string QuietEnd { get; set; } = "07:00";
+    /// <summary>A Time budget the user asked for in Settings, waiting for the Coach's Re-plan to be approved; null when none.</summary>
+    public double? RequestedTimeBudgetHours { get; set; }
+    /// <summary>Whether the phone last reported exact alarms as allowed; null until it has reported.</summary>
+    public bool? ExactAlarmsAllowed { get; set; }
 }
 
 public static class RefreshStatus
@@ -72,10 +84,14 @@ public sealed class ChatMessage
     /// <summary>On a Coach reply: the user message it answers.</summary>
     public Guid? InReplyToId { get; set; }
     public DateTime CreatedAt { get; set; }
+    /// <summary>A Coach message sent without the user asking, which counts toward Contact frequency.</summary>
+    public bool Unprompted { get; set; }
     /// <summary>Set on a card message, e.g. "interview_summary".</summary>
     public string? Card { get; set; }
     /// <summary>The card's data as JSON.</summary>
     public string? CardJson { get; set; }
+    /// <summary>On a user message: what the Coach read in it (a Pause suggestion, a budget cut, a Re-plan), as JSON with no free text.</summary>
+    public string? IntentJson { get; set; }
 }
 
 /// <summary>A recurring window the user is free: one day-and-time window. User-owned.</summary>
@@ -89,6 +105,23 @@ public sealed class Slot
     /// <summary>HH:mm.</summary>
     public required string Start { get; set; }
     public required string End { get; set; }
+}
+
+/// <summary>
+/// A Slot edit or new Slot the user made in Settings. It waits here and is applied by the next Weekly refresh, so the Plan
+/// the user approved is not moved under them. User-owned.
+/// </summary>
+public sealed class SlotEdit
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    /// <summary>The Slot being changed; null for a new Slot.</summary>
+    public Guid? SlotId { get; set; }
+    public required string Label { get; set; }
+    public required string Days { get; set; }
+    public required string Start { get; set; }
+    public required string End { get; set; }
+    public DateTime CreatedAt { get; set; }
 }
 
 public sealed class Aspiration
@@ -105,6 +138,8 @@ public sealed class Aspiration
     public DateOnly HopedForDate { get; set; }
     public DateOnly? SettleForDate { get; set; }
     public string? SettleForPicture { get; set; }
+    /// <summary>Anchor habits the Plan draft held back, as JSON, to be added one at a time at a refresh.</summary>
+    public string? AnchorQueueJson { get; set; }
     /// <summary>gentle_check, quiet_replan or ask_why.</summary>
     public required string OnSkip { get; set; }
     public DateTime CreatedAt { get; set; }
@@ -205,6 +240,15 @@ public sealed class PlanVersion
     public string? ChangesJson { get; set; }
     /// <summary>Approved by the server after a day without an answer, not by the user.</summary>
     public bool AutoApplied { get; set; }
+    /// <summary>A temporary Time budget cut: the last day it holds. The day after, a new version restores the Plan.</summary>
+    public DateOnly? RevertOn { get; set; }
+    /// <summary>On a cut: the Aspiration's share of the Time budget before and during the cut, in hours a week.</summary>
+    public double? ShareBeforeHours { get; set; }
+    public double? ShareAfterHours { get; set; }
+    /// <summary>On a cut: the approved version it was cut from, whose habit minutes a restore brings back.</summary>
+    public Guid? SourceVersionId { get; set; }
+    /// <summary>Guide changes made while this version was in force (chat requests), each with its reason, as a JSON array.</summary>
+    public string? GuideLogJson { get; set; }
 }
 
 public sealed class Milestone
@@ -221,6 +265,17 @@ public sealed class Milestone
     public required string Kind { get; set; }
     /// <summary>upcoming, reached or nearly_there.</summary>
     public required string State { get; set; }
+    public DateTime? ReachedAt { get; set; }
+    /// <summary>When the Coach asked "Did you reach it?" at the Milestone's date; null until asked, and again after an extension.</summary>
+    public DateTime? AskedAt { get; set; }
+    /// <summary>When the user said no to "Did you reach it?" and the work wasn't done: feeds a Re-plan, never a failure.</summary>
+    public DateTime? NotReachedAt { get; set; }
+    /// <summary>The optional Measure beside this Milestone (at most one): a Plan's Measures share one name and unit, so readings form one series.</summary>
+    public string? MeasureName { get; set; }
+    public string? MeasureUnit { get; set; }
+    public double? MeasureStart { get; set; }
+    public double? MeasureHopedFor { get; set; }
+    public bool HasMeasure => MeasureName is not null;
 }
 
 /// <summary>A recurring Action: "N times a week" on Slots. Belongs to the Plan version.</summary>
@@ -232,8 +287,38 @@ public sealed class Habit
     public required string Title { get; set; }
     public int TimesPerWeek { get; set; }
     public int Minutes { get; set; }
-    /// <summary>Comma-separated Slot IDs.</summary>
+    /// <summary>Comma-separated Slot IDs; empty for an Anchor habit.</summary>
     public required string SlotIds { get; set; }
+    /// <summary>The Anchor an Anchor habit is tied to. Such a habit takes no Slot time and stays out of the Time budget and Pace.</summary>
+    public Guid? AnchorId { get; set; }
+    /// <summary>Optional target duration of an Anchor habit ("walk 20 min"); tracked through Check-ins, never planned time.</summary>
+    public int? TargetMinutes { get; set; }
+    /// <summary>The ceiling the ramp-by-count stops at for an Anchor habit.</summary>
+    public int? FullTimesPerWeek { get; set; }
+    /// <summary>For a prep habit on a Slot: the title of the Anchor habit it supports.</summary>
+    public string? PrepFor { get; set; }
+    /// <summary>When the habit first appeared in the Plan; carried over by every version.</summary>
+    public DateOnly? Since { get; set; }
+    public bool ReminderOn { get; set; } = true;
+    /// <summary>The Coach has offered once to stop this habit's reminder.</summary>
+    public bool StopOffered { get; set; }
+    /// <summary>The reminder was stopped by accepting that offer, so a refresh may bring it back if the habit slips.</summary>
+    public bool StoppedByOffer { get; set; }
+    /// <summary>The Action's Guide as JSON (<see cref="Waypoint.Api.Coach.GuideRules"/>); null when it has none.</summary>
+    public string? GuideJson { get; set; }
+}
+
+/// <summary>A moment in the user's routine ("after dinner, around 19:30") that habits are tied to. User-owned.</summary>
+public sealed class Anchor
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    /// <summary>The user's words.</summary>
+    public required string Words { get; set; }
+    /// <summary>HH:mm: the usual time the user confirms.</summary>
+    public required string Time { get; set; }
+    /// <summary>Comma-separated mon..sun; empty means every day.</summary>
+    public string Days { get; set; } = "";
 }
 
 /// <summary>A one-off Action on a Milestone, with a date or, when <see cref="DueDate"/> is null, "this week".</summary>
@@ -246,6 +331,7 @@ public sealed class PlanTask
     public required string Title { get; set; }
     public int Minutes { get; set; }
     public DateOnly? DueDate { get; set; }
+    public string? GuideJson { get; set; }
 }
 
 /// <summary>An occurrence in the two-week window. Exists only once its Plan version is approved.</summary>
@@ -258,7 +344,13 @@ public sealed class ScheduledAction
     public Guid? HabitId { get; set; }
     public Guid? TaskId { get; set; }
     public DateOnly Date { get; set; }
-    public Guid SlotId { get; set; }
+    /// <summary>Null for an Anchor habit, which has <see cref="AnchorId"/> instead.</summary>
+    public Guid? SlotId { get; set; }
+    public Guid? AnchorId { get; set; }
+    /// <summary>An Anchor habit's optional target duration.</summary>
+    public int? TargetMinutes { get; set; }
+    /// <summary>A skipped prep put this night at risk: the Coach is told, never the user blamed.</summary>
+    public bool AtRisk { get; set; }
     public required string Title { get; set; }
     public int Minutes { get; set; }
     /// <summary>Comma-separated client IDs of the latest moves, so a replayed move is idempotent.</summary>
@@ -270,6 +362,10 @@ public sealed class ScheduledAction
     /// <summary>Written ahead by the light model, so a reminder needs no model call. Null until written.</summary>
     public string? ReminderText { get; set; }
     public bool ReminderOn { get; set; } = true;
+    /// <summary>Set on the one-off test task of an ability Milestone (its <see cref="Milestone.Ref"/>); a weekly refresh keeps it.</summary>
+    public string? TestForMilestoneRef { get; set; }
+    /// <summary>The Guide as it stands, copied from the habit or task and kept up to date when a chat request changes it.</summary>
+    public string? GuideJson { get; set; }
 }
 
 public static class ReminderKinds
@@ -319,4 +415,36 @@ public sealed class CheckIn
     public DateTime TappedAt { get; set; }
     /// <summary>The chat message that echoes this Check-in.</summary>
     public Guid EchoMessageId { get; set; }
+}
+
+public static class PauseStarters
+{
+    public const string User = "user";
+    public const string Coach = "coach";
+}
+
+/// <summary>
+/// A stretch of time set aside: for one Aspiration, for everything (both null), or for one Action. User-owned.
+/// It ends at <see cref="EndsAt"/> (null = open until resumed) or when the user resumes, whichever comes first.
+/// </summary>
+public sealed class Pause
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    /// <summary>Set by the phone, so a resend is idempotent.</summary>
+    public required string ClientId { get; set; }
+    public Guid? AspirationId { get; set; }
+    /// <summary>"Just this Action": a Pause of one scheduled Action.</summary>
+    public Guid? ScheduledActionId { get; set; }
+    public DateTime StartsAt { get; set; }
+    public DateTime? EndsAt { get; set; }
+    public DateTime? ResumedAt { get; set; }
+    /// <summary><see cref="PauseStarters"/>.</summary>
+    public required string StartedBy { get; set; }
+    /// <summary>When the one "welcome back" was posted.</summary>
+    public DateTime? WelcomedAt { get; set; }
+    /// <summary>catch_up or shift_dates, as the user answered the welcome back.</summary>
+    public string? ReturnChoice { get; set; }
+    /// <summary>When the first week back was run one notch lower.</summary>
+    public DateTime? EasedAt { get; set; }
 }

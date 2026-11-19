@@ -4,6 +4,8 @@ import { createOfflineToday } from '../today/offline';
 import type { ScheduledActionView } from '../today/today';
 import { MOMENTS_AHEAD, groupByMoment, reminderTime, toArm, upcomingReminders } from './arming';
 import { handleReminderResponse, parseMinutes, parseReminderData, type ReminderResponse } from './headless';
+import { upcomingFollowUps } from './followUp';
+import { en } from '../i18n/en';
 import { arm, type ArmedReminder, type Notifier } from './notifier';
 import { askForReminderPermissions, askOnceAfterFirstPlan, type PermissionPlatform, type PermissionStep } from './permissions';
 
@@ -223,5 +225,50 @@ describe('asking once after the first Plan', () => {
     expect(await askOnceAfterFirstPlan(p, flag)).toEqual(['notifications']);
     expect(await askOnceAfterFirstPlan(p, flag)).toEqual([]);
     expect(log).toEqual(['notifications']);
+  });
+});
+
+describe('Follow-ups armed with the reminders', () => {
+  const armed: ArmedReminder[] = [];
+  const notifier: Notifier = { async cancelAll() { armed.length = 0; }, async schedule(r) { armed.push(r); }, async dismiss() {} };
+  const ctx = (over = {}) => ({ now: NIGHT_BEFORE, interactedAt: null, paused: false, ...over });
+  const armAll = async (actions: ScheduledActionView[], c = ctx()) => {
+    const followUps = upcomingFollowUps(actions, c).map((f) => ({
+      groupKey: `follow-up-${f.actionId}`, at: f.at, title: f.title, body: en.reminders.followUp[f.tone], data: { actionId: f.actionId }, sticky: false,
+    }));
+    await arm(notifier, toArm(actions, c.now), followUps);
+  };
+
+  it('arms one Follow-up per Action at the end of its Slot, in the Aspiration\'s skip tone', async () => {
+    await armAll([action({ onSkip: 'ask_why' })]);
+    expect(armed.map((r) => [r.at, r.data.actionId, r.body])).toEqual([
+      [at(7), 'a1', 'Shoes by the door.'],
+      [at(7, 45), 'a1', en.reminders.followUp.ask_why],
+    ]);
+  });
+
+  it('falls back to a gentle check when the Action carries no tone', async () => {
+    await armAll([action()]);
+    expect(armed[1]!.body).toBe(en.reminders.followUp.gentle_check);
+  });
+
+  it('arms none when the user interacted that day, or when the Action is switched off', async () => {
+    await armAll([action()], ctx({ now: at(6, 0), interactedAt: at(6, 0) }));
+    expect(armed.map((r) => r.at)).toEqual([at(7)]);
+    await armAll([action({ reminderOn: false })]);
+    expect(armed).toEqual([]);
+  });
+
+  it('arms none for a habit that can still happen later that week', async () => {
+    await armAll([action({ kind: 'habit' }), action({ id: 'a2', kind: 'habit', date: '2026-01-09' })]);
+    expect(armed.filter((r) => r.at.getDate() === 7 && r.at.getHours() === 7 && r.at.getMinutes() === 45)).toEqual([]);
+  });
+
+  it('arms none during a Pause or after two unreported Actions', async () => {
+    await armAll([action()], ctx({ paused: true }));
+    expect(armed).toHaveLength(1);
+    const earlier = [action({ id: 'p1', date: '2026-01-05' }), action({ id: 'p2', date: '2026-01-06' })];
+    await armAll([...earlier, action()], ctx({ now: at(6, 0, 7) }));
+    expect(armed.map((r) => r.data.actionId)).toEqual(['a1']);
   });
 });

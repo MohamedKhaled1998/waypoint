@@ -5,10 +5,13 @@ import { useTranslation } from 'react-i18next';
 import { useRouter } from 'expo-router';
 import { StyleSheet, useUnistyles } from 'react-native-unistyles';
 import { groupByDay, type ChatMessage } from '../../coach/chat';
-import { chipLabel, filterThread, pinnedProposals, quickReplies, tagOf } from '../../coach/threads';
+import { chipLabel, filterThread, quickReplies, tagOf } from '../../coach/threads';
 import { markThreadRead } from '../../coach/unread';
 import { useThreadAspirations } from '../../coach/useCoachBadge';
 import { useCoachChat } from '../../coach/useCoachChat';
+import { pauseFromCard, waitingItems, type PauseCardData } from '../../coach/waiting';
+import { usePauses } from '../../pause/usePauses';
+import { usePlanSummaries } from '../../plan/usePlan';
 import { useKeyboardHeight } from '../../coach/useKeyboardHeight';
 import { Banner } from '../../ui/Banner';
 import { Button } from '../../ui/Button';
@@ -20,6 +23,8 @@ type Row =
   | { key: string; kind: 'message'; message: ChatMessage }
   | { key: string; kind: 'typing' };
 
+const hasClientId = (clientId: string) => (p: { clientId: string }) => p.clientId === clientId;
+
 export default function CoachScreen() {
   const { t } = useTranslation();
   const router = useRouter();
@@ -27,11 +32,21 @@ export default function CoachScreen() {
   const insets = useSafeAreaInsets();
   const keyboard = useKeyboardHeight();
   const { messages, typing, late, send } = useCoachChat();
+  const { plans } = usePlanSummaries();
+  const paused = usePauses(plans);
+  const waiting = useMemo(() => waitingItems(messages, plans, paused.pauses, new Date()), [messages, plans, paused.pauses]);
+  const startPause = (card: PauseCardData) => {
+    const { scope, until, clientId } = pauseFromCard(card);
+    void paused.start(scope, until, clientId);
+  };
+  const isStarted = (card: PauseCardData) => paused.pauses.some(hasClientId(card.clientId));
+  const review = (versionId: string) => router.push({ pathname: '/plan-review', params: { id: versionId } });
+  const pauseWhen = (card: PauseCardData) =>
+    card.span === 'open' ? t('coach.pauseOpen') : card.span === 'until' && card.endsOn ? t('coach.pauseUntil', { date: card.endsOn }) : t('coach.pauseToday');
   const [draft, setDraft] = useState('');
   const aspirations = useThreadAspirations();
   const [filter, setFilter] = useState<string | null>(null);
   const shown = filterThread(messages, filter);
-  const waiting = pinnedProposals(aspirations, filter);
   const replies = filter === null ? quickReplies(messages) : [];
   const list = useRef<FlatList<Row>>(null);
 
@@ -75,11 +90,47 @@ export default function CoachScreen() {
     }
     if (item.message.card === 'proposal' && item.message.cardData?.planVersionId) {
       const versionId = String(item.message.cardData.planVersionId);
+      const reason = item.message.cardData.reason;
+      const kind = reason === 'time_budget_cut' ? 'cut' : reason === 're_plan' ? 'rePlan' : null;
+      const name = item.message.cardData.shortName;
       return (
         <Card hue={item.message.cardData.hue}>
-          <Text variant="heading">{t('plan.proposalTitle', { name: item.message.cardData.shortName })}</Text>
-          <Text muted>{t('plan.proposalBody')}</Text>
-          <Button title={t('plan.review')} onPress={() => router.push({ pathname: '/plan-review', params: { id: versionId } })} />
+          <Text variant="heading">{kind ? t(`plan.${kind}Title`, { name }) : t('plan.proposalTitle', { name })}</Text>
+          <Text muted>{kind ? t(`plan.${kind}Body`) : t('plan.proposalBody')}</Text>
+          <Button title={t('plan.review')} onPress={() => review(versionId)} />
+        </Card>
+      );
+    }
+    if (item.message.card === 'pause_suggestion' && item.message.cardData?.clientId) {
+      const card = item.message.cardData as PauseCardData;
+      const started = isStarted(card);
+      const when = pauseWhen(card);
+      return (
+        <Card>
+          <Text variant="heading">{t('coach.pauseTitle')}</Text>
+          <Text muted>
+            {card.aspirationId ? t('coach.pauseOne', { name: card.shortName, when }) : t('coach.pauseEverything', { when })}
+          </Text>
+          {started ? <Text muted>{t('coach.pauseStarted')}</Text> : <Button title={t('coach.pauseStart')} onPress={() => startPause(card)} />}
+        </Card>
+      );
+    }
+    if (item.message.card === 'guide' && item.message.cardData?.guide) {
+      const data = item.message.cardData;
+      const areas = (data.guide.withheld ?? []).map(withheldArea).join(', ');
+      return (
+        <Card hue={data.hue}>
+          <Text variant="heading">{t('coach.guideTitle', { action: data.action })}</Text>
+          <Text>{data.guide.body}</Text>
+          {areas ? <Text muted>{t('coach.guideWithheld', { areas })}</Text> : null}
+        </Card>
+      );
+    }
+    if (item.message.card === 'referral') {
+      return (
+        <Card hue={item.message.cardData?.hue}>
+          <Text variant="heading">{t('coach.referralTitle')}</Text>
+          <Text>{item.message.text}</Text>
         </Card>
       );
     }
@@ -129,12 +180,22 @@ export default function CoachScreen() {
           ))}
         </View>
       ) : null}
-      {waiting.map((w) => (
-        <View key={w.aspirationId} style={styles.pinned}>
-          <Text style={styles.flex} numberOfLines={2}>{t('coach.waitingTitle', { name: chipLabel(w.shortName) })}</Text>
-          <Button title={t('coach.waitingReview')} onPress={() => router.push({ pathname: '/plan-review', params: { id: w.versionId } })} />
+      {waiting.length > 0 ? (
+        <View style={styles.pinned}>
+          {waiting.map((w) => (
+            <Pressable
+              key={w.key}
+              accessibilityRole="button"
+              onPress={() => (w.kind === 'proposal' ? review(w.versionId) : startPause(w.card))}
+              style={styles.pill}
+            >
+              <Text variant="label">
+                {w.kind === 'proposal' ? t('coach.waitingProposal', { name: w.shortName }) : t('coach.waitingPause')}
+              </Text>
+            </Pressable>
+          ))}
         </View>
-      ))}
+      ) : null}
       <FlatList
         ref={list}
         style={styles.list}
@@ -199,12 +260,10 @@ const styles = StyleSheet.create((theme) => ({
   hueDot: (hue: 'coral' | 'teal' | 'amber') => ({ backgroundColor: theme.colors.hues[hue].solid }),
   tag: { flexDirection: 'row', alignItems: 'center', gap: theme.space.xs, alignSelf: 'flex-start' },
   tagMine: { alignSelf: 'flex-end' },
-  pinned: {
-    flexDirection: 'row', alignItems: 'center', gap: theme.space.md, marginHorizontal: theme.space.lg, marginTop: theme.space.sm,
-    padding: theme.space.md, borderRadius: theme.radii.md, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.accentTint,
-  },
   replies: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.space.sm, paddingHorizontal: theme.space.lg, paddingBottom: theme.space.sm },
   container: { flex: 1, backgroundColor: theme.colors.background },
+  pinned: { padding: theme.space.sm, gap: theme.space.xs, borderBottomWidth: 1, borderBottomColor: theme.colors.border, backgroundColor: theme.colors.surface },
+  pill: { paddingHorizontal: theme.space.md, paddingVertical: theme.space.sm, borderRadius: theme.radii.pill, backgroundColor: theme.colors.background },
   list: { flex: 1 },
   listContent: { padding: theme.space.lg, gap: theme.space.sm },
   empty: { textAlign: 'center', marginTop: theme.space.xl },
@@ -238,3 +297,7 @@ const styles = StyleSheet.create((theme) => ({
   sendButton: { paddingHorizontal: theme.space.lg, paddingVertical: theme.space.md, borderRadius: theme.radii.pill, backgroundColor: theme.colors.accent },
   sendText: { color: theme.colors.onAccent },
 }));
+
+function withheldArea(w: { area: string }): string {
+  return w.area;
+}

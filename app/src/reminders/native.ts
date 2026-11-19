@@ -40,6 +40,7 @@ export const expoNotifier: Notifier = {
         data: r.data,
         categoryIdentifier: REMINDER_CATEGORY,
         threadIdentifier: r.groupKey,
+        ...(r.sticky ? { sticky: true, autoDismiss: false } : {}),
       },
       trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: r.at, channelId: CHANNEL },
     });

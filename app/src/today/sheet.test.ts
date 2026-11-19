@@ -58,8 +58,8 @@ describe('Action sheet', () => {
     expect(sheet.state().coachWillAsk).toBe(true);
   });
 
-  it('Not today offers just this Action', () => {
+  it('Not today is a Pause: this Action, everything for the rest of today, or a few days', () => {
     const sheet = createActionSheet({ scheduledActionId: 'a', minutes: 30 });
-    expect(sheet.notTodayScopes).toEqual(['thisAction']);
+    expect(sheet.notTodayScopes).toEqual(['thisAction', 'everythingToday', 'fewDays']);
   });
 });

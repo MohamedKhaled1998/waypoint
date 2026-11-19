@@ -5,7 +5,7 @@ import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { Text } from '../ui/Text';
 import type { Hue } from '../theme/tokens';
-import { resultLabel, type CheckInState, type ScheduledActionView, type TodayModel } from './today';
+import { resultLabel, timeLabel, type CheckInState, type ScheduledActionView, type TodayModel } from './today';
 
 export type Aspiration = { aspirationId: string; shortName: string; hue: string };
 const hueOf = (aspirations: Aspiration[], id: string): Hue | undefined => {
@@ -27,7 +27,7 @@ export function NowCard({
     <Card style={styles.now}>
       <Pressable accessibilityRole="button" onPress={() => onOpen(a)}>
         <Text variant="label" muted>
-          {t(now.kind === 'overdue' ? 'today.overdueTitle' : 'today.nextTitle', { time: a.slotStart })}
+          {t(now.kind === 'overdue' ? 'today.overdueTitle' : 'today.nextTitle', { time: a.anchor ? `~${a.slotStart}` : a.slotStart })}
         </Text>
         <Text variant="heading">{a.title}</Text>
       </Pressable>
@@ -48,14 +48,15 @@ export function TimelineRow({
   return (
     <View style={[styles.rowItem, result && styles.dim]}>
       <Text variant="caption" muted style={styles.time}>
-        {action.slotStart}
+        {action.anchor ? `~${action.slotStart}` : action.slotStart}
       </Text>
       <Pressable accessibilityRole="button" style={styles.flex} onPress={() => onOpen(action)}>
         <Card hue={hueOf(aspirations, action.aspirationId)} style={[styles.actionCard, isNow && styles.outlined]}>
           {isNow ? <Text variant="caption">{t('today.nowOutlined')}</Text> : null}
           <Text variant="label">{action.title}</Text>
+          {action.anchor ? <Text variant="caption" muted>{timeLabel(action)}</Text> : null}
           <Text variant="caption" muted>
-            {result ? t(`today.result.${result.state}`, result.state === 'partly' ? { minutes: result.minutes, planned: result.planned } : {}) : t('today.minutes', { count: action.minutes })}
+            {result ? t(`today.result.${result.state}`, result.state === 'partly' ? { minutes: result.minutes, planned: result.planned } : {}) : action.anchor ? (action.targetMinutes ? t('today.target', { count: action.targetMinutes }) : '') : t('today.minutes', { count: action.minutes })}
           </Text>
         </Card>
       </Pressable>
@@ -75,14 +76,14 @@ export function NowLine() {
   );
 }
 
-export function AspirationChips({ aspirations }: { aspirations: Aspiration[] }) {
+export function AspirationChips({ aspirations, onOpen }: { aspirations: Aspiration[]; onOpen?: (a: Aspiration) => void }) {
   return (
     <View style={styles.chips}>
       {aspirations.map((a) => (
-        <View key={a.aspirationId} style={styles.chip}>
+        <Pressable key={a.aspirationId} accessibilityRole="button" style={styles.chip} onPress={() => onOpen?.(a)}>
           <View style={[styles.dot, hueOf(aspirations, a.aspirationId) ? styles.hueDot(hueOf(aspirations, a.aspirationId)!) : null]} />
           <Text variant="caption">{a.shortName}</Text>
-        </View>
+        </Pressable>
       ))}
     </View>
   );

@@ -32,5 +32,23 @@ services:
     ports:
       - "8080:8080"
 
+  backup:
+    build: ./backup
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      MYSQL_HOST: db
+      MYSQL_DATABASE: waypoint
+      MYSQL_USER: root
+      MYSQL_PWD: ${MYSQL_ROOT_PASSWORD}
+      BACKUP_PASSPHRASE: ${BACKUP_PASSPHRASE:?set BACKUP_PASSPHRASE in .env (keep a copy off this machine)}
+      BACKUP_HOUR_UTC: ${BACKUP_HOUR_UTC:-03}
+      BACKUP_RETENTION_DAYS: 30
+    volumes:
+      # Must be storage that is not this machine's disk: a mounted cloud drive, NAS or synced folder.
+      - ${BACKUP_DIR:?set BACKUP_DIR in .env to an off-machine location}:/backups
+
 volumes:
   db-data:

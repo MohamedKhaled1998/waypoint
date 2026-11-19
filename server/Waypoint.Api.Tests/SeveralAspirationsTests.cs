@@ -8,7 +8,7 @@ using Waypoint.Api.Tests.Support;
 namespace Waypoint.Api.Tests;
 
 /// <summary>Up to three active Aspirations share one Time budget and the same Slots.</summary>
-public sealed class SeveralAspirationsTests(WaypointApiFactory factory) : PlanTestBase(factory), IClassFixture<WaypointApiFactory>
+public sealed class SeveralAspirationsTests(WaypointApiFactory factory) : AnchorTestBase(factory), IClassFixture<WaypointApiFactory>
 {
     private static JsonObject Hand(string shortName, string settleFor, bool withUser)
     {
@@ -38,9 +38,9 @@ public sealed class SeveralAspirationsTests(WaypointApiFactory factory) : PlanTe
         return (await confirm.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("aspirationId").GetGuid();
     }
 
-    private async Task ApproveAsync(HttpClient c, Guid aspirationId)
+    private async Task ApproveAsync(HttpClient c, Guid aspirationId, JsonObject? plan = null)
     {
-        var version = await DraftedAsync(c, aspirationId, Plan());
+        var version = await DraftedAsync(c, aspirationId, plan ?? Plan());
         (await c.PostAsync($"/plan-versions/{version}/approve", null)).EnsureSuccessStatusCode();
     }
 
@@ -92,6 +92,35 @@ public sealed class SeveralAspirationsTests(WaypointApiFactory factory) : PlanTe
         // Lax gets only its weekly minimum: one Action a week. The removal of its other unchecked Actions is intended (see
         // Scheduling.ResolveAsync): it leaves no reminder or job behind, and the next Weekly refresh plans from what remains.
         Assert.Equal(2, actions.Count(a => Who(a) == lax));
+    }
+
+    [Fact]
+    public async Task An_Anchor_habit_takes_no_place_in_a_Slot_and_does_not_count_toward_the_weekly_minimum()
+    {
+        // Jobs the earlier tests left behind run first, without eating this test's scripted Plans.
+        while (await RunJobsAsync() > 0) { }
+        var (c, _) = await SignedInAsync();
+        // Lax, the furthest from its Settle-for line, also walks after dinner twice in the first week (Tue 6 and Thu 8 Jan).
+        var lax = await AddAspirationAsync(c, "Lax", "2026-12-31", first: true);
+        await ApproveAsync(c, lax, PlanWithAnchor());
+        var tight = await AddAspirationAsync(c, "Tight", "2026-06-02");
+        await ApproveAsync(c, tight);
+        var mid = await AddAspirationAsync(c, "Mid", "2026-09-01");
+        await ApproveAsync(c, mid);
+
+        var actions = (await c.GetFromJsonAsync<JsonElement>("/scheduled-actions")).EnumerateArray().ToList();
+        string Date(JsonElement a) => a.GetProperty("date").GetString()!;
+        bool OnAnchor(JsonElement a) => a.GetProperty("anchor").ValueKind != JsonValueKind.Null;
+        var laxActions = actions.Where(a => a.GetProperty("aspirationId").GetGuid() == lax).ToList();
+
+        // The Slot is full, yet both Anchor Actions stay: they take no Slot time, so they never compete for it.
+        Assert.Equal(new[] { "2026-01-06", "2026-01-08" }, laxActions.Where(OnAnchor).Select(Date).OrderBy(d => d, StringComparer.Ordinal));
+        // An Anchor Action does not meet the weekly minimum: Lax still keeps one Slot Action in each week.
+        var laxInSlots = laxActions.Where(a => !OnAnchor(a)).ToList();
+        Assert.Equal(2, laxInSlots.Count);
+        Assert.Contains(laxInSlots, a => string.CompareOrdinal(Date(a), "2026-01-12") < 0);
+        Assert.Contains(laxInSlots, a => string.CompareOrdinal(Date(a), "2026-01-12") >= 0);
+        Assert.Equal(5, actions.Count(a => a.GetProperty("aspirationId").GetGuid() == tight));
     }
 
     [Fact]

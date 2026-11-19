@@ -118,12 +118,12 @@ public abstract class PlanTestBase(WaypointApiFactory factory)
         return (c, userId, id, aspirationId);
     }
 
-    /// <summary>Earlier tests in the class share the database: their unsent push jobs would add to this test's job counts.</summary>
+    /// <summary>Earlier tests in the class share the database: their unsent push and Guide jobs would add to this test's job counts.</summary>
     private async Task ClearPushJobsAsync()
     {
         using var scope = factory.Services.CreateScope();
         await scope.ServiceProvider.GetRequiredService<WaypointDb>().Jobs.IgnoreQueryFilters()
-            .Where(j => j.Kind == JobKinds.PushMessage && j.State == JobState.Pending)
+            .Where(j => (j.Kind == JobKinds.PushMessage || j.Kind == JobKinds.GuideWrite) && j.State == JobState.Pending)
             .ExecuteUpdateAsync(s => s.SetProperty(j => j.State, JobState.Done));
     }
 
