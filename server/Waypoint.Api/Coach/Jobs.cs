@@ -11,6 +11,9 @@ public static class JobKinds
     public const string CheckInReply = "check_in_reply";
     public const string ReminderText = "reminder_text";
     public const string PushMessage = "push_message";
+    public const string WeeklyRefresh = "weekly_refresh";
+    public const string RefreshApply = "refresh_apply";
+    public const string RefreshPrompt = "refresh_prompt";
 }
 
 /// <summary>Adds jobs. Payloads are row IDs only, so no free text can reach the jobs table.</summary>
@@ -83,6 +86,15 @@ public sealed class JobRunner(IServiceScopeFactory scopes, TimeProvider clock, I
                     break;
                 case JobKinds.PushMessage:
                     await sp.GetRequiredService<Waypoint.Api.Push.PushNotifier>().SendForMessageAsync(ids["chatMessageId"], ct);
+                    break;
+                case JobKinds.WeeklyRefresh:
+                    await sp.GetRequiredService<WeeklyRefreshRunner>().RunAsync(ids["refreshId"], ct);
+                    break;
+                case JobKinds.RefreshApply:
+                    await sp.GetRequiredService<RefreshApplier>().ApplyAsync(ids["refreshId"], ct);
+                    break;
+                case JobKinds.RefreshPrompt:
+                    await sp.GetRequiredService<Waypoint.Api.Push.PushNotifier>().SendRefreshPromptAsync(ids["refreshId"], ct);
                     break;
                 default:
                     throw new InvalidOperationException("unknown_job_kind");

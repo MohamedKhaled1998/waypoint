@@ -3,7 +3,7 @@ import { Pressable, ScrollView, View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet } from 'react-native-unistyles';
-import { LANDING_TAB, TALK_IT_THROUGH_ROUTE, confirmModel, tabBar, type PlanTab, type PlanVersionView } from '../plan/review';
+import { TALK_IT_THROUGH_ROUTE, changeRows, confirmFacts, confirmModel, landingTabFor, tabBar, tabsFor, type PlanTab, type PlanVersionView } from '../plan/review';
 import { usePlanReview } from '../plan/usePlan';
 import { askedFlag, phonePermissions } from '../reminders/native';
 import { askOnceAfterFirstPlan } from '../reminders/permissions';
@@ -18,9 +18,12 @@ export default function PlanReviewScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const review = usePlanReview(String(id));
-  const [tab, setTab] = useState<PlanTab>(LANDING_TAB);
+  const [chosen, setChosen] = useState<PlanTab | null>(null);
   const [confirming, setConfirming] = useState(false);
   const version = review.version;
+  const tabs = tabsFor(version);
+  const tab: PlanTab = chosen && tabs.includes(chosen) ? chosen : landingTabFor(version);
+  const isRefresh = version?.reason === 'weekly_refresh';
 
   // Right after the first Plan is approved, once: notifications, then exact alarms, one at a time, each with its reason.
   const outcome = review.outcome;
@@ -29,7 +32,7 @@ export default function PlanReviewScreen() {
   }, [outcome]);
 
   const show = (next: PlanTab) => {
-    setTab(next);
+    setChosen(next);
     review.open(next);
     setConfirming(false);
   };
@@ -48,7 +51,8 @@ export default function PlanReviewScreen() {
     );
   }
 
-  const confirm = confirmModel(review.unopened);
+  const confirm = confirmModel(review.unopened, tabs);
+  const facts = confirmFacts(version);
   const approved = review.outcome === 'approved';
 
   return (
@@ -65,7 +69,7 @@ export default function PlanReviewScreen() {
         </Card>
 
         <View style={styles.tabs} accessibilityRole="tablist">
-          {tabBar(review.unopened).map(({ tab: name, dot }) => (
+          {tabBar(review.unopened, tabs).map(({ tab: name, dot }) => (
             <Pressable
               key={name}
               accessibilityRole="tab"
@@ -81,6 +85,9 @@ export default function PlanReviewScreen() {
           ))}
         </View>
 
+        {version.autoApplied ? <Banner message={t('plan.changes.autoApplied')} /> : null}
+        {tab === 'changes' ? <Changes version={version} /> : null}
+        {tab === 'milestones' ? <Route version={version} /> : null}
         {tab === 'route' ? <Route version={version} /> : null}
         {tab === 'twoWeeks' ? <TwoWeeks version={version} /> : null}
         {tab === 'habits' ? <Habits version={version} /> : null}
@@ -90,20 +97,26 @@ export default function PlanReviewScreen() {
       <View style={styles.bar}>
         {approved ? (
           <>
-            <Text variant="heading">{t('plan.started')}</Text>
+            <Text variant="heading">{t(isRefresh ? 'plan.changes.applied' : 'plan.started')}</Text>
             <Button title={t('plan.close')} onPress={() => router.replace('/')} />
           </>
         ) : confirming ? (
           <>
-            <Text variant="heading">{t('plan.confirmTitle')}</Text>
-            <Text muted>{t('plan.confirmBody')}</Text>
+            <Text variant="heading">{t(isRefresh ? 'plan.changes.confirmTitle' : 'plan.confirmTitle')}</Text>
+            <Text muted>
+              {isRefresh
+                ? facts.staysInHistory !== null
+                  ? t('plan.changes.confirmBody', { n: facts.staysInHistory })
+                  : t('plan.changes.confirmBodyPlain')
+                : t('plan.confirmBody')}
+            </Text>
             {confirm.lookAt ? (
               <>
                 <Text muted>{t('plan.notOpened', { tabs: confirm.unopenedTabs.map((n) => t(`plan.tabs.${n}`)).join(', ') })}</Text>
                 <Button kind="secondary" title={t('plan.lookAt', { tab: t(`plan.tabs.${confirm.lookAt}`) })} onPress={() => show(confirm.lookAt!)} />
               </>
             ) : null}
-            <Button title={t('plan.start')} disabled={review.approving} onPress={() => void approve()} />
+            <Button title={t(isRefresh ? 'plan.changes.apply' : 'plan.start')} disabled={review.approving} onPress={() => void approve()} />
             <Button kind="quiet" title={t('plan.notYet')} onPress={() => setConfirming(false)} />
           </>
         ) : (
@@ -113,6 +126,31 @@ export default function PlanReviewScreen() {
           </>
         )}
       </View>
+    </View>
+  );
+}
+
+function Changes({ version }: { version: PlanVersionView }) {
+  const { t } = useTranslation();
+  const rows = changeRows(version);
+  return (
+    <View style={styles.section}>
+      {rows.changes.length === 0 ? <Text muted>{t('plan.changes.nothingChanged')}</Text> : null}
+      {rows.changes.map((c) => (
+        <Card key={`${c.title}-${c.field}`}>
+          <Text variant="heading">{c.title}</Text>
+          <Text>
+            <Text style={styles.struck}>{t(`plan.changes.field.${c.field}`, { value: c.before })}</Text>
+            {' → '}
+            {t(`plan.changes.field.${c.field}`, { value: c.after })}
+          </Text>
+          <Text muted>{c.reason}</Text>
+        </Card>
+      ))}
+      <Text variant="label" muted>{t('plan.changes.stays')}</Text>
+      {rows.stays.map((s) => (
+        <Text key={`${s.what}-${s.title}`}>{t(s.what === 'milestone' ? 'plan.changes.stayMilestone' : 'plan.changes.stayHabit', { title: s.title, detail: s.detail })}</Text>
+      ))}
     </View>
   );
 }
@@ -203,6 +241,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   tabOn: { backgroundColor: theme.colors.accent, borderColor: theme.colors.accent },
   tabOnText: { color: theme.colors.onAccent },
+  struck: { textDecorationLine: 'line-through' },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: theme.colors.danger },
   bar: {
     gap: theme.space.sm,

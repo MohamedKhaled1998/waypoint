@@ -1,6 +1,10 @@
 import {
   LANDING_TAB,
   PLAN_TABS,
+  REFRESH_TABS,
+  changeRows,
+  confirmFacts,
+  tabsFor,
   TALK_IT_THROUGH_ROUTE,
   confirmModel,
   createPlanReview,
@@ -136,5 +140,75 @@ describe('Plan review', () => {
     await review.approve();
     expect(review.getState().outcome).toBe('failed');
     expect(review.getState().version?.id).toBe('v1');
+  });
+});
+
+describe('Plan review for a weekly refresh', () => {
+  const refreshVersion = (id: string, over: Partial<PlanVersionView> = {}) =>
+    version(id, {
+      reason: 'weekly_refresh',
+      replacesNumber: 2,
+      changes: {
+        changes: [
+          { code: 'ramp_minutes', what: 'habit', title: 'Easy run', field: 'minutes', before: 30, after: 35, reason: 'You kept up, so a small step.' },
+        ],
+        stays: [
+          { what: 'milestone', title: 'Run 5 km', date: '2026-02-02' },
+          { what: 'habit', title: 'Stretch', times_per_week: 2, minutes: 10 },
+        ],
+      },
+      ...over,
+    });
+
+  it('has the tabs Changes · Two weeks · Milestones · Habits, Changes on screen and the rest unopened', async () => {
+    const review = createPlanReview(fakeApi({ get: async (id) => refreshVersion(id) }).api, 'v2');
+    await review.load();
+    expect(REFRESH_TABS).toEqual(['changes', 'twoWeeks', 'milestones', 'habits']);
+    expect(tabsFor(review.getState().version)).toEqual(REFRESH_TABS);
+    expect(tabBar(review.getState().unopened, REFRESH_TABS)).toEqual([
+      { tab: 'changes', dot: false },
+      { tab: 'twoWeeks', dot: true },
+      { tab: 'milestones', dot: true },
+      { tab: 'habits', dot: true },
+    ]);
+    review.open('milestones');
+    expect(review.getState().unopened).toEqual(['twoWeeks', 'habits']);
+    expect(confirmModel(review.getState().unopened, REFRESH_TABS)).toEqual({ unopenedTabs: ['twoWeeks', 'habits'], lookAt: 'twoWeeks' });
+  });
+
+  it('keeps the first Plan on its own tabs', async () => {
+    const review = createPlanReview(fakeApi().api, 'v1');
+    await review.load();
+    expect(tabsFor(review.getState().version)).toEqual(PLAN_TABS);
+  });
+
+  it('shows each change as before → after with its reason, and what stays', () => {
+    const rows = changeRows(refreshVersion('v2'));
+    expect(rows.changes).toEqual([{ title: 'Easy run', field: 'minutes', before: 30, after: 35, reason: 'You kept up, so a small step.' }]);
+    expect(rows.stays).toEqual([
+      { what: 'milestone', title: 'Run 5 km', detail: '2026-02-02' },
+      { what: 'habit', title: 'Stretch', detail: '2 · 10' },
+    ]);
+    expect(changeRows(version('v1'))).toEqual({ changes: [], stays: [] });
+  });
+
+  it('names the version that stays in the Plan\'s history on Approve', () => {
+    expect(confirmFacts(refreshVersion('v2'))).toEqual({ staysInHistory: 2 });
+    expect(confirmFacts(version('v1'))).toEqual({ staysInHistory: null });
+  });
+
+  it('opens a newer version on the tabs that fit it', async () => {
+    const { api } = fakeApi({
+      get: async (id) => refreshVersion(id),
+      async approve() {
+        return { kind: 'stale', newer: refreshVersion('v3') };
+      },
+    });
+    const review = createPlanReview(api, 'v2');
+    await review.load();
+    review.open('habits');
+    await review.approve();
+    expect(review.getState().version?.id).toBe('v3');
+    expect(review.getState().unopened).toEqual(['twoWeeks', 'milestones', 'habits']);
   });
 });

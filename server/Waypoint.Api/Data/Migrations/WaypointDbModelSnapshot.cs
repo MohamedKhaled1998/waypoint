@@ -482,6 +482,12 @@ namespace Waypoint.Api.Data.Migrations
                         .IsRequired()
                         .HasColumnType("longtext");
 
+                    b.Property<bool>("AutoApplied")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("ChangesJson")
+                        .HasColumnType("longtext");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime(6)");
 
@@ -500,6 +506,9 @@ namespace Waypoint.Api.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("varchar(32)");
+
+                    b.Property<Guid?>("RefreshId")
+                        .HasColumnType("char(36)");
 
                     b.Property<DateOnly>("StartDate")
                         .HasColumnType("date");
@@ -684,6 +693,16 @@ namespace Waypoint.Api.Data.Migrations
                         .HasMaxLength(255)
                         .HasColumnType("varchar(255)");
 
+                    b.Property<int>("RefreshDay")
+                        .HasColumnType("int");
+
+                    b.Property<string>("RefreshTime")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(5)
+                        .HasColumnType("varchar(5)")
+                        .HasDefaultValue("18:00");
+
                     b.Property<DateTime?>("SetupAt")
                         .HasColumnType("datetime(6)");
 
@@ -696,6 +715,36 @@ namespace Waypoint.Api.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("Waypoint.Api.Data.WeeklyRefresh", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime?>("AutoApplyAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime?>("OpenedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime>("RunAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("varchar(16)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("char(36)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "Status");
+
+                    b.ToTable("WeeklyRefreshes");
                 });
 
             modelBuilder.Entity("Waypoint.Api.Push.DeviceToken", b =>
@@ -895,6 +944,15 @@ namespace Waypoint.Api.Data.Migrations
                 });
 
             modelBuilder.Entity("Waypoint.Api.Data.Slot", b =>
+                {
+                    b.HasOne("Waypoint.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Waypoint.Api.Data.WeeklyRefresh", b =>
                 {
                     b.HasOne("Waypoint.Api.Data.User", null)
                         .WithMany()

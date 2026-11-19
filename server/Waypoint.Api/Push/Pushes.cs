@@ -19,6 +19,9 @@ public static class Pushes
     public const int MaxTokenLength = 512;
     public const string PlanReadyRoute = "plan_ready";
     public const string CoachRoute = "coach";
+    public const string WeeklyRefreshRoute = "weekly_refresh";
+    /// <summary>The notification category whose "Looks good" action accepts the refresh from the shade.</summary>
+    public const string RefreshCategory = "weekly_refresh";
 
     public static void MapPushes(this WebApplication app)
     {
@@ -49,6 +52,27 @@ public static class Pushes
 public sealed class PushNotifier(WaypointDb db, IPushSender sender)
 {
     private const int MaxBody = 140;
+
+    /// <summary>
+    /// The one weekly refresh prompt: sent once, never repeated if ignored, and not counted toward Contact frequency.
+    /// "Looks good" in the shade accepts through the refresh ID.
+    /// </summary>
+    public async Task SendRefreshPromptAsync(Guid refreshId, CancellationToken ct)
+    {
+        var refresh = await db.WeeklyRefreshes.FirstOrDefaultAsync(r => r.Id == refreshId, ct);
+        if (refresh is null || refresh.Status != RefreshStatus.Open) return;
+        var tokens = await db.DeviceTokens.ToListAsync(ct);
+        if (tokens.Count == 0) return;
+        var first = await db.PlanVersions.Where(p => p.RefreshId == refreshId).OrderBy(p => p.CreatedAt).Select(p => p.Id).FirstOrDefaultAsync(ct);
+        var data = new Dictionary<string, string>
+        {
+            ["route"] = Pushes.WeeklyRefreshRoute, ["refreshId"] = refreshId.ToString(), ["planVersionId"] = first.ToString(), ["category"] = Pushes.RefreshCategory,
+        };
+        foreach (var t in tokens)
+            if (await sender.SendAsync(new PushMessage(t.Token, "Weekly refresh", "Your coming week is ready to look over.", data, Pushes.RefreshCategory), ct) == PushResult.InvalidToken)
+                db.DeviceTokens.Remove(t);
+        await db.SaveChangesAsync(ct);
+    }
 
     public async Task SendForMessageAsync(Guid chatMessageId, CancellationToken ct)
     {

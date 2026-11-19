@@ -22,6 +22,7 @@ public sealed class WaypointDb(DbContextOptions<WaypointDb> options, CurrentUser
     public DbSet<PlanTask> PlanTasks => Set<PlanTask>();
     public DbSet<ScheduledAction> ScheduledActions => Set<ScheduledAction>();
     public DbSet<CheckIn> CheckIns => Set<CheckIn>();
+    public DbSet<WeeklyRefresh> WeeklyRefreshes => Set<WeeklyRefresh>();
     public DbSet<Change> Changes => Set<Change>();
 
     public override Task<int> SaveChangesAsync(CancellationToken ct = default)
@@ -224,6 +225,15 @@ public sealed class WaypointDb(DbContextOptions<WaypointDb> options, CurrentUser
             e.HasIndex(c => new { c.UserId, c.Seq });
             e.HasOne<User>().WithMany().HasForeignKey(c => c.UserId);
             e.HasQueryFilter(c => c.UserId == CurrentUserId);
+        });
+        b.Entity<User>().Property(u => u.RefreshTime).HasMaxLength(5).HasDefaultValue("18:00");
+        b.Entity<PlanVersion>().Property(p => p.ChangesJson).HasColumnType("longtext");
+        b.Entity<WeeklyRefresh>(e =>
+        {
+            e.Property(r => r.Status).HasMaxLength(16);
+            e.HasIndex(r => new { r.UserId, r.Status });
+            e.HasOne<User>().WithMany().HasForeignKey(r => r.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasQueryFilter(r => r.UserId == CurrentUserId);
         });
         b.Entity<ScheduledAction>().Property(a => a.MoveClientIds).HasMaxLength(1024);
         b.Entity<ScheduledAction>().Property(a => a.ReminderKind).HasMaxLength(16);

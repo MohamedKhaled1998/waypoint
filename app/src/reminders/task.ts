@@ -9,6 +9,8 @@ import { phoneStorage } from '../sync/phone';
 import { createOfflineToday } from '../today/offline';
 import { handleReminderResponse, type ReminderResponse } from './headless';
 import { expoNotifier } from './native';
+import { acceptRefresh } from '../push/native';
+import { handleRefreshResponse, type RefreshResponse } from '../push/push';
 import { rearmReminders } from './rearm';
 
 export const REMINDER_TASK = 'waypoint-reminder-response';
@@ -17,6 +19,13 @@ export const REMINDER_TASK = 'waypoint-reminder-response';
 TaskManager.defineTask<Notifications.NotificationTaskPayload>(REMINDER_TASK, async ({ data, error }) => {
   if (error || !data || !('actionIdentifier' in data)) return;
   const session = createSession(keystoreStorage, httpAuth);
+  // "Looks good" on the weekly refresh prompt shares this task: it answers its own button and leaves the rest.
+  const auth = { getAccessToken: session.getAccessToken, renewAccess: () => session.restore().catch(() => false) };
+  const refresh = await handleRefreshResponse(data as unknown as RefreshResponse, {
+    accept: (id) => acceptRefresh(auth, id),
+    dismiss: (id) => expoNotifier.dismiss(id),
+  });
+  if (refresh !== 'ignored') return;
   const sync = createSync({
     storage: phoneStorage,
     remote: httpRemote({ getAccessToken: session.getAccessToken, renewAccess: () => session.restore().catch(() => false) }),

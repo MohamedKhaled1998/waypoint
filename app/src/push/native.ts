@@ -2,7 +2,7 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { fetch } from 'expo/fetch';
 import i18n from '../i18n';
-import type { PushRegistration } from './push';
+import { REFRESH_CATEGORY, REFRESH_LOOKS_GOOD, type PushRegistration } from './push';
 
 const baseUrl = process.env.EXPO_PUBLIC_API_URL ?? '';
 
@@ -13,6 +13,10 @@ export async function setUpPushChannel() {
     name: i18n.t('push.channel'),
     importance: Notifications.AndroidImportance.HIGH,
   });
+  // "Looks good" on the weekly refresh prompt, answered from the shade without opening the app.
+  await Notifications.setNotificationCategoryAsync(REFRESH_CATEGORY, [
+    { identifier: REFRESH_LOOKS_GOOD, buttonTitle: i18n.t('push.looksGood'), options: { opensAppToForeground: false } },
+  ]);
   // A push that arrives while the app is open still shows.
   Notifications.setNotificationHandler({
     handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: false, shouldSetBadge: false }),
@@ -45,3 +49,15 @@ export const phonePush = (auth: Auth): PushRegistration => ({
 
 /** Best effort on sign-out, so the next user on this phone never gets this user's pushes. */
 export const forgetPushToken = (auth: Auth) => call(auth, 'DELETE').catch(() => {});
+
+/** Accepts a weekly refresh on the server ("Looks good"). Throws when it cannot, so the notification stays. */
+export async function acceptRefresh(auth: Auth, refreshId: string) {
+  const go = () =>
+    fetch(`${baseUrl}/weekly-refresh/${encodeURIComponent(refreshId)}/accept`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${auth.getAccessToken() ?? ''}` },
+    });
+  let res = await go();
+  if (res.status === 401 && (await auth.renewAccess())) res = await go();
+  if (!res.ok) throw new Error(`weekly refresh ${res.status}`);
+}

@@ -64,7 +64,7 @@ public static class Plans
         CheckIn = checkIn is null ? null : CheckIns.View(checkIn),
     };
 
-    private static async Task<IResult> Approve(Guid id, WaypointDb db, TimeProvider clock, JobQueue jobs, CancellationToken ct)
+    internal static async Task<IResult> Approve(Guid id, WaypointDb db, TimeProvider clock, JobQueue jobs, CancellationToken ct)
     {
         var version = await db.PlanVersions.FirstOrDefaultAsync(p => p.Id == id, ct);
         if (version is null) return Results.NotFound();
@@ -79,7 +79,8 @@ public static class Plans
             var replaced = await db.PlanVersions.Where(p => p.Id == id && p.Status == PlanVersionStatus.Proposed)
                 .ExecuteUpdateAsync(s => s.SetProperty(p => p.Status, PlanVersionStatus.Replaced), ct);
             if (replaced == 0) return await StaleAsync(db, await RefreshAsync(db, version, ct), ct);
-            if (!await db.Jobs.AnyAsync(j => j.Kind == JobKinds.Plan && j.AspirationId == version.AspirationId && j.State == JobState.Pending, ct))
+            // A stale refresh just waits for the next one; only a first Plan is drafted again.
+            if (version.Reason == "first_plan" && !await db.Jobs.AnyAsync(j => j.Kind == JobKinds.Plan && j.AspirationId == version.AspirationId && j.State == JobState.Pending, ct))
                 await jobs.EnqueueAsync(JobKinds.Plan, version.UserId, new Dictionary<string, Guid> { ["aspirationId"] = version.AspirationId }, version.AspirationId, ct: ct);
             return Results.Conflict(new { error = "stale", reason = "window_started", newer = (PlanVersionView?)null });
         }
@@ -102,8 +103,19 @@ public static class Plans
         version = await RefreshAsync(db, version, ct);
         version.Number = (await db.PlanVersions.Where(p => p.AspirationId == version.AspirationId).MaxAsync(p => p.Number, ct) ?? 0) + 1;
 
+        // A refresh rolls the window: what it planned from its start on replaces what was planned, except Actions already checked in.
+        var kept = new HashSet<(DateOnly, string)>();
+        if (version.Reason == WeeklyRefreshes.Reason)
+        {
+            var future = await db.ScheduledActions.Where(a => a.AspirationId == version.AspirationId && a.Date >= version.StartDate && a.PlanVersionId != id).ToListAsync(ct);
+            var checkedIn = await db.CheckIns.Where(c => future.Select(a => a.Id).Contains(c.ScheduledActionId)).Select(c => c.ScheduledActionId).ToListAsync(ct);
+            foreach (var a in future)
+                if (checkedIn.Contains(a.Id)) kept.Add((a.Date, a.Title));
+                else db.ScheduledActions.Remove(a);
+        }
         foreach (var a in JsonNode.Parse(version.TwoWeeksJson)!.AsArray().Select(a => a!.AsObject()))
         {
+            if (kept.Contains((PlanRules.ParseDate(HandOff.Str(a, "date"))!.Value, HandOff.Str(a, "action")!))) continue;
             // Linked by the IDs the draft stored, never by title or label.
             db.ScheduledActions.Add(new ScheduledAction
             {
@@ -117,6 +129,9 @@ public static class Plans
         }
         // The reminder text is written after approval, so a slow or failing model never holds up the Plan.
         jobs.Add(JobKinds.ReminderText, version.UserId, new Dictionary<string, Guid> { ["planVersionId"] = id }, version.AspirationId);
+        // The first approved Plan books the first Weekly refresh, after the Plan's first day.
+        if (version.Reason == "first_plan")
+            await WeeklyRefreshes.ScheduleNextAsync(db, jobs, clock, version.StartDate.ToDateTime(new TimeOnly(23, 59, 59), DateTimeKind.Utc), ct);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return Results.Ok(await ViewAsync(db, version, ct));
@@ -168,7 +183,7 @@ public static class Plans
     public sealed record TaskView(Guid Id, string Title, int Minutes, DateOnly? Due, string? Milestone);
     public sealed record PlanVersionView(Guid Id, Guid AspirationId, string ShortName, string Hue, int? Number, string Status, string Reason,
         string Rationale, string Ramp, JsonNode? Assumptions, DateOnly StartDate, IEnumerable<MilestoneView> Milestones,
-        IEnumerable<HabitView> Habits, IEnumerable<TaskView> Tasks, JsonNode? TwoWeeks);
+        IEnumerable<HabitView> Habits, IEnumerable<TaskView> Tasks, JsonNode? TwoWeeks, Guid? RefreshId, JsonNode? Changes, bool AutoApplied, int? ReplacesNumber);
 
     private static async Task<PlanVersionView> ViewAsync(WaypointDb db, PlanVersion v, CancellationToken ct)
     {
@@ -183,6 +198,10 @@ public static class Plans
             habits.Select(h => new HabitView(h.Id, h.Title, h.TimesPerWeek, h.Minutes,
                 h.SlotIds.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(s => slots.GetValueOrDefault(Guid.Parse(s))).ToList())).ToList(),
             tasks.Select(t => new TaskView(t.Id, t.Title, t.Minutes, t.DueDate, milestones.FirstOrDefault(m => m.Id == t.MilestoneId)?.Title)).ToList(),
-            JsonNode.Parse(v.TwoWeeksJson));
+            JsonNode.Parse(v.TwoWeeksJson), v.RefreshId, v.ChangesJson is null ? null : JsonNode.Parse(v.ChangesJson), v.AutoApplied,
+            // What a proposal would replace: that version stays in the Plan's history.
+            v.Status == PlanVersionStatus.Proposed
+                ? await db.PlanVersions.Where(p => p.AspirationId == v.AspirationId && p.Status == PlanVersionStatus.Approved).Select(p => p.Number).FirstOrDefaultAsync(ct)
+                : null);
     }
 }

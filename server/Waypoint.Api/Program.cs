@@ -34,6 +34,8 @@ builder.Services.AddScoped<CoachMessenger>();
 builder.Services.AddScoped<JobQueue>();
 builder.Services.AddScoped<PlanDrafter>();
 builder.Services.AddScoped<ReminderWriter>();
+builder.Services.AddScoped<WeeklyRefreshRunner>();
+builder.Services.AddScoped<RefreshApplier>();
 builder.Services.AddScoped<CheckInReplies>();
 builder.Services.AddSingleton<JobRunner>();
 if (builder.Configuration.GetValue("Jobs:Worker:Enabled", true)) builder.Services.AddHostedService<JobWorker>();
@@ -111,6 +113,7 @@ app.MapGet("/me/sessions", async (TimeProvider clock, WaypointDb db, Cancellatio
 app.MapCoachChat();
 app.MapInterviews();
 app.MapPlans();
+app.MapWeeklyRefreshes();
 app.MapCheckIns();
 app.MapSync();
 app.MapPushes();

@@ -1,8 +1,13 @@
-import { registerPushToken, routeForPush } from './push';
+import { REFRESH_LOOKS_GOOD, handleRefreshResponse, registerPushToken, routeForPush } from './push';
 
 describe('where a push tap goes', () => {
   it('opens Plan review for "Plan ready", with the proposed version', () => {
     expect(routeForPush({ route: 'plan_ready', planVersionId: 'v1' })).toEqual({ pathname: '/plan-review', params: { id: 'v1' } });
+  });
+
+  it('opens Plan review on the first proposal for the weekly refresh prompt', () => {
+    expect(routeForPush({ route: 'weekly_refresh', refreshId: 'r1', planVersionId: 'v7' })).toEqual({ pathname: '/plan-review', params: { id: 'v7' } });
+    expect(routeForPush({ route: 'weekly_refresh', refreshId: 'r1' })).toBeNull();
   });
 
   it('opens the Coach chat for a Coach message', () => {
@@ -62,5 +67,48 @@ describe('registering the FCM token', () => {
     });
     await expect(r.ready).resolves.toBeUndefined();
     expect(sent).toEqual([]);
+  });
+});
+
+describe('"Looks good" on the weekly refresh prompt', () => {
+  const response = (actionIdentifier: string, data: unknown) => ({
+    actionIdentifier,
+    notification: { request: { identifier: 'n1', content: { dataString: data === null ? null : JSON.stringify(data) } } },
+  });
+  const deps = () => {
+    const accepted: string[] = [];
+    const dismissed: string[] = [];
+    return {
+      accepted,
+      dismissed,
+      deps: { accept: async (id: string) => void accepted.push(id), dismiss: async (id: string) => void dismissed.push(id) },
+    };
+  };
+
+  it('accepts the refresh named in the push, from the shade, and clears the notification', async () => {
+    const d = deps();
+    expect(await handleRefreshResponse(response(REFRESH_LOOKS_GOOD, { route: 'weekly_refresh', refreshId: 'r1' }), d.deps)).toBe('accepted');
+    expect(d.accepted).toEqual(['r1']);
+    expect(d.dismissed).toEqual(['n1']);
+  });
+
+  it('leaves a body tap, another button and a push that is not a refresh alone', async () => {
+    const d = deps();
+    expect(await handleRefreshResponse(response('expo.modules.notifications.actions.DEFAULT', { route: 'weekly_refresh', refreshId: 'r1' }), d.deps)).toBe('ignored');
+    expect(await handleRefreshResponse(response(REFRESH_LOOKS_GOOD, { route: 'coach' }), d.deps)).toBe('ignored');
+    expect(await handleRefreshResponse(response(REFRESH_LOOKS_GOOD, null), d.deps)).toBe('ignored');
+    expect(d.accepted).toEqual([]);
+  });
+
+  it('keeps the notification when the accept cannot be sent, so the tap is not lost', async () => {
+    const dismissed: string[] = [];
+    const out = await handleRefreshResponse(response(REFRESH_LOOKS_GOOD, { route: 'weekly_refresh', refreshId: 'r1' }), {
+      accept: async () => {
+        throw new Error('offline');
+      },
+      dismiss: async (id) => void dismissed.push(id),
+    });
+    expect(out).toBe('failed');
+    expect(dismissed).toEqual([]);
   });
 });

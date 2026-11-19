@@ -15,7 +15,7 @@ public sealed class FakeCoachModelClient : ICoachModelClient
     public void Enqueue(params string[] chunks) => Script.Enqueue(chunks);
 
     /// <summary>Answers a request itself when it returns chunks, before <see cref="Script"/>; for tests with many jobs in flight.</summary>
-    public Func<CoachRequest, string[]?>? Responder { get; set; } = ReminderTextFor;
+    public Func<CoachRequest, string[]?>? Responder { get; set; } = req => ReminderTextFor(req) ?? WeeklyRefreshFor(req);
 
     /// <summary>The default responder: every reminder batch gets text for each Action in it, so those jobs never eat a scripted reply.</summary>
     public static string[]? ReminderTextFor(CoachRequest req)
@@ -23,6 +23,15 @@ public sealed class FakeCoachModelClient : ICoachModelClient
         if (req.Kind != CoachCallKind.ReminderText) return null;
         var ids = System.Text.Json.JsonDocument.Parse(req.Turns[0].Text).RootElement.GetProperty("actions").EnumerateArray().Select(a => a.GetProperty("id").GetString());
         return ["```json\n" + System.Text.Json.JsonSerializer.Serialize(new { reminders = ids.Select(id => new { id, text = "Easy run: shoes by the door." }) }) + "\n```"];
+    }
+
+    /// <summary>The weekly refresh call: a rationale and a reason for every change code it was given.</summary>
+    public static string[]? WeeklyRefreshFor(CoachRequest req)
+    {
+        if (req.Kind != CoachCallKind.WeeklyRefresh) return null;
+        var codes = System.Text.Json.JsonDocument.Parse(req.Turns[0].Text).RootElement.GetProperty("changes").EnumerateArray()
+            .Select(c => c.GetProperty("code").GetString()!).ToList();
+        return ["```json\n" + System.Text.Json.JsonSerializer.Serialize(new { rationale = "Next week, gently.", reasons = codes.ToDictionary(c => c, c => "You kept up, so a small step.") }) + "\n```"];
     }
 
     public async IAsyncEnumerable<string> StreamAsync(CoachRequest request, [EnumeratorCancellation] CancellationToken ct)

@@ -12,6 +12,34 @@ public sealed class User
     public string? ContactFrequency { get; set; }
     /// <summary>When the per-user block (Slots, Time budget, Contact frequency) was first saved.</summary>
     public DateTime? SetupAt { get; set; }
+    /// <summary>The day of the week the Weekly refresh runs (0 = Sunday); default Sunday.</summary>
+    public DayOfWeek RefreshDay { get; set; } = DayOfWeek.Sunday;
+    /// <summary>HH:mm, UTC like every other time the server keeps; default 18:00.</summary>
+    public string RefreshTime { get; set; } = "18:00";
+}
+
+public static class RefreshStatus
+{
+    /// <summary>Booked for its day and time; not run yet.</summary>
+    public const string Scheduled = "scheduled";
+    /// <summary>Proposals made and waiting for the user.</summary>
+    public const string Open = "open";
+    public const string Accepted = "accepted";
+    /// <summary>The user didn't answer for a day, so the proposals applied themselves.</summary>
+    public const string AutoApplied = "auto_applied";
+}
+
+/// <summary>One Weekly refresh for the user, across all Aspirations. User-owned.</summary>
+public sealed class WeeklyRefresh
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    /// <summary>When it is due to run.</summary>
+    public DateTime RunAt { get; set; }
+    public required string Status { get; set; }
+    public DateTime? OpenedAt { get; set; }
+    /// <summary>When an unanswered proposal applies itself.</summary>
+    public DateTime? AutoApplyAt { get; set; }
 }
 
 /// <summary>A user-owned row: carries <c>UserId</c>, covered by the global query filter.</summary>
@@ -171,6 +199,12 @@ public sealed class PlanVersion
     public DateOnly StartDate { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? ApprovedAt { get; set; }
+    /// <summary>The Weekly refresh that proposed this version, if any.</summary>
+    public Guid? RefreshId { get; set; }
+    /// <summary>"Here's what I changed": before → after with reasons, and what stays. JSON; null for a first Plan.</summary>
+    public string? ChangesJson { get; set; }
+    /// <summary>Approved by the server after a day without an answer, not by the user.</summary>
+    public bool AutoApplied { get; set; }
 }
 
 public sealed class Milestone

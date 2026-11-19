@@ -12,7 +12,7 @@ public sealed class FirebaseOptions
 }
 
 /// <summary>One notification for one device token. <see cref="Data"/> carries the route the tap opens.</summary>
-public sealed record PushMessage(string Token, string Title, string Body, IReadOnlyDictionary<string, string> Data);
+public sealed record PushMessage(string Token, string Title, string Body, IReadOnlyDictionary<string, string> Data, string? Category = null);
 
 public enum PushResult { Sent, InvalidToken }
 
@@ -41,7 +41,7 @@ public sealed class FirebasePushSender(IOptions<FirebaseOptions> options) : IPus
             Token = message.Token,
             Notification = new Notification { Title = message.Title, Body = message.Body },
             Data = message.Data.ToDictionary(p => p.Key, p => p.Value),
-            Android = new AndroidConfig { Priority = Priority.High, Notification = new AndroidNotification { ChannelId = "coach" } },
+            Android = new AndroidConfig { Priority = Priority.High, Notification = new AndroidNotification { ChannelId = "coach", ClickAction = message.Category } },
         };
         try
         {

@@ -7,6 +7,11 @@ export function routeForPush(data: Record<string, unknown> | null | undefined): 
       return typeof data.planVersionId === 'string' && data.planVersionId
         ? { pathname: '/plan-review', params: { id: data.planVersionId } }
         : null;
+    case 'weekly_refresh':
+      // The proposal to look at: the first one of the refresh.
+      return typeof data.planVersionId === 'string' && data.planVersionId
+        ? { pathname: '/plan-review', params: { id: data.planVersionId } }
+        : null;
     case 'coach':
       return '/coach';
     default:
@@ -33,4 +38,40 @@ export function registerPushToken(reg: PushRegistration): { ready: Promise<void>
   const stopRefresh = reg.onRefresh((t) => void trySend(t));
   const ready = reg.getToken().then(trySend, () => console.warn('push: no token'));
   return { ready, stop: stopRefresh };
+}
+
+/** The notification category and button the weekly refresh prompt carries. */
+export const REFRESH_CATEGORY = 'weekly_refresh';
+export const REFRESH_LOOKS_GOOD = 'looks_good';
+
+export type RefreshResponse = {
+  actionIdentifier: string;
+  notification: { request: { identifier: string; content: { dataString?: string | null } } };
+};
+
+export type RefreshDeps = {
+  /** Accepts the refresh's proposals on the server. Throws when it cannot be sent. */
+  accept: (refreshId: string) => Promise<void>;
+  dismiss: (notificationId: string) => Promise<void>;
+};
+
+/** "Looks good" in the shade, app killed or not: accepts the refresh named in the push. Any other tap is left to the app. */
+export async function handleRefreshResponse(res: RefreshResponse, deps: RefreshDeps): Promise<'accepted' | 'ignored' | 'failed'> {
+  if (res.actionIdentifier !== REFRESH_LOOKS_GOOD) return 'ignored';
+  let refreshId: unknown;
+  try {
+    const data = JSON.parse(res.notification.request.content.dataString ?? 'null') as { route?: unknown; refreshId?: unknown } | null;
+    refreshId = data?.route === 'weekly_refresh' ? data.refreshId : null;
+  } catch {
+    return 'ignored';
+  }
+  if (typeof refreshId !== 'string' || !refreshId) return 'ignored';
+  try {
+    await deps.accept(refreshId);
+  } catch {
+    // Still on the shade, and the proposal applies itself after a day anyway.
+    return 'failed';
+  }
+  await deps.dismiss(res.notification.request.identifier);
+  return 'accepted';
 }

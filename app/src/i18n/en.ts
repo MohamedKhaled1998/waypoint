@@ -128,7 +128,20 @@ export const en = {
   plan: {
     title: 'Your Plan',
     whatChanged: 'What changed and why',
-    tabs: { route: 'Route', twoWeeks: 'Two weeks', habits: 'Habits', assumes: 'Assumes' },
+    tabs: { route: 'Route', twoWeeks: 'Two weeks', habits: 'Habits', assumes: 'Assumes', changes: 'Changes', milestones: 'Milestones' },
+    changes: {
+      field: { minutes: '{{value}} min', times_per_week: '{{value}} times a week' },
+      stays: 'What stays',
+      stayHabit: '{{title}} · {{detail}}',
+      stayMilestone: '{{title}} · {{detail}}',
+      nothingChanged: 'Nothing changes this week.',
+      autoApplied: 'You did not answer for a day, so these changes applied themselves.',
+      confirmTitle: 'Approve this week?',
+      confirmBody: 'The changes apply from tomorrow. Version {{n}} stays in the Plan\'s history.',
+      confirmBodyPlain: 'The changes apply from tomorrow. The version now in force stays in the Plan\'s history.',
+      apply: 'Approve this week',
+      applied: 'This week is set.',
+    },
     unopened: 'Not opened yet',
     reachedWhen: 'Reached when {{text}}',
     kind: { effort: 'Work done', ability: 'An ability gained' },
@@ -171,6 +184,7 @@ export const en = {
   },
   push: {
     channel: 'Coach',
+    looksGood: 'Looks good',
   },
   reminders: {
     channel: 'Reminders',
