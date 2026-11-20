@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Waypoint.Api.Coach;
 using Waypoint.Api.Tests.Support;
 
@@ -76,18 +78,27 @@ public sealed class CheckInTests(WaypointApiFactory factory) : PlanTestBase(fact
     }
 
     [Fact]
-    public async Task A_Check_in_with_a_note_gets_a_reply_on_the_heavy_model_and_one_without_on_the_light_model()
+    public async Task A_Check_in_with_a_note_and_one_without_get_replies_on_their_configured_models()
     {
         var (c, actionId) = await WithActionAsync();
         var secondId = (await c.GetFromJsonAsync<JsonElement[]>("/scheduled-actions"))![1].GetProperty("id").GetGuid();
         factory.Coach.Fail = false;
 
-        factory.Coach.Enqueue("Thanks for ", "telling me.");
-        await CheckIn(c, actionId, "ci-1", "done", T0, note: "felt great");
-        factory.Clock.Advance(TimeSpan.FromMinutes(1));
-        await RunJobsAsync();
-        Assert.Equal(CoachCallKind.CheckInReplyWithNote, factory.Coach.Requests.Last().Kind);
-        Assert.Equal("claude-sonnet-5-5", factory.Coach.Requests.Last().Model);
+        // Other tests' replies come due on the same fake clock and would take a scripted reply: answer only this note.
+        var responder = factory.Coach.Responder;
+        factory.Coach.Responder = req => req.Kind == CoachCallKind.CheckInReplyWithNote && req.Turns.Any(t => t.Text.Contains("felt great"))
+            ? ["Thanks for ", "telling me."]
+            : responder?.Invoke(req);
+        try
+        {
+            await CheckIn(c, actionId, "ci-1", "done", T0, note: "felt great");
+            factory.Clock.Advance(TimeSpan.FromMinutes(1));
+            await RunJobsAsync();
+        }
+        finally { factory.Coach.Responder = responder; }
+        var withNote = factory.Coach.Requests.Last(r => r.Turns.Any(t => t.Text.Contains("felt great")));
+        Assert.Equal(CoachCallKind.CheckInReplyWithNote, withNote.Kind);
+        Assert.Equal(ConfiguredModel(CoachCallKind.CheckInReplyWithNote), withNote.Model);
 
         var thread = await c.GetFromJsonAsync<JsonElement[]>("/coach/messages");
         Assert.Equal("Thanks for telling me.", thread!.Last().GetProperty("text").GetString());
@@ -98,8 +109,11 @@ public sealed class CheckInTests(WaypointApiFactory factory) : PlanTestBase(fact
         factory.Clock.Advance(TimeSpan.FromMinutes(1));
         await RunJobsAsync();
         Assert.Equal(CoachCallKind.CheckInReplyNoNote, factory.Coach.Requests.Last().Kind);
-        Assert.Equal("claude-haiku-5-5", factory.Coach.Requests.Last().Model);
+        Assert.Equal(ConfiguredModel(CoachCallKind.CheckInReplyNoNote), factory.Coach.Requests.Last().Model);
     }
+
+    private string ConfiguredModel(CoachCallKind kind) =>
+        factory.Services.GetRequiredService<IOptions<CoachOptions>>().Value.For(kind).Model;
 
     [Fact]
     public async Task When_the_model_fails_the_Check_in_stays_and_no_reply_is_faked()

@@ -16,7 +16,10 @@ services:
       retries: 20
 
   api:
-    build: ./server/Waypoint.Api
+    build:
+      context: ./server/Waypoint.Api
+      args:
+        CLAUDE_CLI: ${COACH_USE_CLAUDE_CLI:-false}
     restart: unless-stopped
     depends_on:
       db:
@@ -26,6 +29,9 @@ services:
       Jwt__Key: ${JWT_KEY:?set JWT_KEY in .env (32+ random characters)}
       Google__ClientIds__0: ${GOOGLE_WEB_CLIENT_ID:?set GOOGLE_WEB_CLIENT_ID in .env}
       Anthropic__ApiKey: ${ANTHROPIC_API_KEY:-}
+      # Development only: COACH_USE_CLAUDE_CLI=true runs the Coach on your Claude subscription, not the API key.
+      ClaudeCli__Enabled: ${COACH_USE_CLAUDE_CLI:-false}
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
       Firebase__ServiceAccountFile: /run/secrets/firebase-service-account.json
     volumes:
       - ./secrets:/run/secrets:ro

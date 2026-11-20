@@ -21,7 +21,12 @@ builder.Services.AddSingleton<IGoogleTokenVerifier, GoogleTokenVerifier>();
 
 builder.Services.Configure<CoachOptions>(builder.Configuration.GetSection("Coach"));
 builder.Services.Configure<AnthropicOptions>(builder.Configuration.GetSection("Anthropic"));
-builder.Services.AddHttpClient<ICoachModelClient, AnthropicCoachModelClient>(c => c.Timeout = TimeSpan.FromMinutes(2));
+builder.Services.Configure<ClaudeCliOptions>(builder.Configuration.GetSection("ClaudeCli"));
+// Development only: Coach calls go through the local `claude` CLI on the developer's subscription.
+if (builder.Configuration.GetValue<bool>("ClaudeCli:Enabled"))
+    builder.Services.AddSingleton<ICoachModelClient, ClaudeCliCoachModelClient>();
+else
+    builder.Services.AddHttpClient<ICoachModelClient, AnthropicCoachModelClient>(c => c.Timeout = TimeSpan.FromMinutes(2));
 
 builder.Services.AddOptions<FirebaseOptions>().Bind(builder.Configuration.GetSection("Firebase"))
     .Validate(o => !string.IsNullOrWhiteSpace(o.ServiceAccountFile) && CanRead(o.ServiceAccountFile),

@@ -31,6 +31,15 @@ Needs Docker. `.env` next to `docker-compose.yml` (never commit it):
 docker compose up --build
 ```
 
+**Coach on your Claude subscription (development only).** To test without paying for API calls, add to `.env`:
+
+```
+COACH_USE_CLAUDE_CLI=true
+CLAUDE_CODE_OAUTH_TOKEN=<from `claude setup-token`>
+```
+
+and rebuild (`docker compose up --build`). The image then includes the `claude` CLI and every Coach call runs through it on your subscription and its usage limits; `ANTHROPIC_API_KEY` is ignored. Only for you testing locally: never with real users.
+
 The API listens on port 8080 and applies EF Core migrations on start. Locally, for the API outside Docker, set
 `ConnectionStrings__Waypoint`, `Jwt__Key`, `Google__ClientIds__0` and `Firebase__ServiceAccountFile` (or use `dotnet user-secrets`).
 
