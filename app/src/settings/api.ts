@@ -53,6 +53,9 @@ export function httpSettingsApi(auth: Auth) {
     setTimeBudget: (hours: number) => call('/settings/time-budget', 'PUT', { hours }),
     editSlot: (id: string, body: SlotEditBody) => call(`/settings/slots/${id}`, 'PUT', body),
     addSlot: (body: SlotEditBody) => call('/settings/slots', 'POST', body),
+    /** A Slot added since the last Weekly refresh, not in force yet: it can still be changed or dropped. */
+    editNewSlot: (editId: string, body: SlotEditBody) => call(`/settings/slots/new/${editId}`, 'PUT', body),
+    removeNewSlot: (editId: string) => call(`/settings/slots/new/${editId}`, 'DELETE'),
     setContactFrequency: (value: string) => call('/settings/contact-frequency', 'PUT', { value }),
     setQuietHours: (start: string, end: string) => call('/settings/quiet-hours', 'PUT', { start, end }),
     setWeeklyRefresh: (day: string, time: string) => call('/settings/weekly-refresh', 'PUT', { day, time }),

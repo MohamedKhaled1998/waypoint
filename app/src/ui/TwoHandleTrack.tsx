@@ -56,15 +56,15 @@ export function TwoHandleTrack({ from, to, value, onMove, onRelease, startLabel,
 
 const styles = StyleSheet.create((theme) => ({
   track: { height: HANDLE + theme.space.md, justifyContent: 'center' },
-  rail: { height: 6, borderRadius: 3, backgroundColor: theme.colors.border },
-  span: { position: 'absolute', height: 6, borderRadius: 3, backgroundColor: theme.colors.accent },
+  rail: { height: 8, borderRadius: 4, backgroundColor: theme.colors.surfaceAlt },
+  span: { position: 'absolute', height: 8, borderRadius: 4, backgroundColor: theme.colors.accent },
   handle: {
     position: 'absolute',
     width: HANDLE,
     height: HANDLE,
     borderRadius: HANDLE / 2,
     backgroundColor: theme.colors.surface,
-    borderWidth: 2,
+    borderWidth: 3,
     borderColor: theme.colors.accent,
   },
 }));

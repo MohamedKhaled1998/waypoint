@@ -52,6 +52,7 @@ export const en = {
       note: 'The Coach will propose a Re-plan to fit. Your Plan stays as it is until you approve it.',
       asked: '{{hours}} h a week is waiting for your Coach’s Re-plan.',
       unshared: 'Not given to an Aspiration yet',
+      pausedNote: 'Everything is paused; the budget waits with it.',
     },
     slots: {
       title: 'Slots',
@@ -66,6 +67,9 @@ export const en = {
       save: 'Save',
       cancel: 'Cancel',
       defaultLabel: 'Slot',
+      range: '{{start}} – {{end}}',
+      stayPut: 'Actions already in this Slot this week stay put.',
+      remove: 'Remove Slot',
     },
     contact: {
       title: 'Contact frequency',
@@ -73,6 +77,11 @@ export const en = {
       Gentle: 'Gentle',
       Chatty: 'Chatty',
       note: 'How often the Coach may reach out unasked.',
+      line: {
+        Quiet: 'Your Coach speaks when you check in or ask, and at the weekly refresh.',
+        Gentle: 'Now and then your Coach checks in unasked, a few times a week at most.',
+        Chatty: 'Your Coach checks in most days.',
+      },
     },
     quiet: {
       title: 'Quiet hours',
@@ -92,6 +101,8 @@ export const en = {
       inexact: 'Exact alarms are off',
       warning: 'Reminders may come up to an hour late.',
       allow: 'Allow exact alarms',
+      allowed: 'Allowed · reminders land on the minute',
+      example: 'A 07:00 run could be reminded at 07:50. Allowing exact alarms fixes that.',
     },
     appearance: { title: 'Appearance', system: 'Same as phone', light: 'Light', dark: 'Dark' },
     refresh: {
@@ -113,6 +124,8 @@ export const en = {
       pausedOpen: 'Paused until you resume',
     },
     you: { title: 'You', google: 'Signed in with Google' },
+    coachSection: 'Your Coach',
+    moreSection: 'More',
     myData: {
       title: 'My data',
       export: 'Export my data',
@@ -123,6 +136,8 @@ export const en = {
       deleteTitle: 'Delete everything?',
       deleteBody: "This deletes your account and everything in it, at once. It can't be undone.",
       exportFirst: 'Export first',
+      copyFirst: 'Want a copy first?',
+      exportShort: 'One zip with everything',
       deleteConfirm: 'Delete everything',
       cancel: 'Cancel',
       deleteFailed: "Couldn't delete your account. Nothing was changed. Try again when you're connected.",
