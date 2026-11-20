@@ -1,3 +1,4 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, TextInput, View } from 'react-native';
 import { KeyboardPadded } from '../ui/KeyboardPadded';
@@ -16,7 +17,6 @@ import { useInterview } from '../interview/useInterview';
 import { Banner } from '../ui/Banner';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
-import { Pill } from '../ui/Pill';
 import { Text } from '../ui/Text';
 import { settleForLine } from '../aspiration/settleFor';
 
@@ -42,14 +42,17 @@ export default function InterviewScreen() {
   function leave() {
     router.back();
   }
-  // Confirming the picture hands the Plan to the Coach: first run waits on the drafting screen.
+  // Confirming the picture hands the Plan to the Coach: first run waits on the drafting screen, otherwise the
+  // thread, where the picture now sits as a card.
   const interviewDone = iv.step === 'done';
   useEffect(() => {
-    if (!interviewDone || !inFirstRun) return;
-    void firstRun.advance('drafting').then(() => router.replace('/drafting'));
+    if (!interviewDone) return;
+    if (inFirstRun) void firstRun.advance('drafting').then(() => router.replace('/drafting'));
+    else router.replace('/coach');
   }, [interviewDone, inFirstRun, router]);
 
   const insets = useSafeAreaInsets();
+  const inChat = iv.started && (iv.step === 'chat' || iv.step === 'shortName' || iv.step === 'picture');
   return (
     // Reaches the bottom edge: clears the nav bar, or the keyboard when it is up.
     <KeyboardPadded minPadding={insets.bottom} style={styles.container}>
@@ -68,13 +71,27 @@ export default function InterviewScreen() {
         />
         {inFirstRun ? <View style={styles.counter}><StepCounter step="interview" /></View> : null}
         {!iv.started && !words ? <OwnWords onBegin={(words) => void iv.begin(words)} /> : null}
-        {iv.started && iv.step !== 'done' ? <HeardStrip heard={iv.heard} /> : null}
-        {iv.started && iv.step === 'chat' ? <Chat iv={iv} /> : null}
-        {iv.step === 'shortName' ? <ShortNameStep iv={iv} /> : null}
-        {iv.step === 'picture' ? <PictureStep iv={iv} /> : null}
-        {iv.step === 'done' ? <Done onClose={leave} /> : null}
+        {inChat ? (
+          <View style={styles.top}>
+            <ProgressLine answered={iv.messages.filter((m) => m.role === 'user').length} />
+            <HeardStrip heard={iv.heard} />
+          </View>
+        ) : null}
+        {inChat ? <Chat iv={iv} /> : null}
       </View>
     </KeyboardPadded>
+  );
+}
+
+/** About 12 answers make an Interview; the line fills as they come in. */
+const EXPECTED_ANSWERS = 12;
+
+function ProgressLine({ answered }: { answered: number }) {
+  const share = Math.min(answered / EXPECTED_ANSWERS, 1);
+  return (
+    <View style={styles.progress}>
+      <View style={[styles.progressFill, { width: `${share * 100}%` }]} />
+    </View>
   );
 }
 
@@ -114,28 +131,40 @@ function Chip({ label, onPress }: { label: string; onPress: () => void }) {
   );
 }
 
+function countLit(heard: Heard[]) {
+  return heard.filter((h) => h.lit).length;
+}
+
 /** "What I've heard": eight parts that light up as answers come in; tap to unfold. */
 function HeardStrip({ heard }: { heard: Heard[] }) {
   const { t } = useTranslation();
+  const { theme } = useUnistyles();
   const [open, setOpen] = useState(false);
+  const lit = countLit(heard);
   return (
-    <Pressable accessibilityRole="button" onPress={() => setOpen((o) => !o)} style={styles.strip}>
-      <Text variant="caption" muted>{t('interview.heard')}</Text>
-      <View style={styles.chips}>
-        {heard.map((h) => (
-          <View key={h.key} style={[styles.part, h.lit && styles.partLit]}>
-            <Text variant="caption" muted={!h.lit}>{t(`interview.parts.${h.key}`)}</Text>
-          </View>
-        ))}
+    <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={() => setOpen((o) => !o)} style={styles.strip}>
+      <View style={styles.stripHead}>
+        <Text variant="caption" muted style={styles.flex}>{t('interview.heardCount', { n: lit, of: heard.length })}</Text>
+        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color={theme.colors.textMuted} />
       </View>
-      {open
-        ? heard.map((h) => (
-            <View key={h.key} style={styles.partRow}>
-              <Text variant="label">{t(`interview.parts.${h.key}`)}</Text>
-              <Text muted={!h.lit}>{h.lit ? h.text : t('interview.heardNothing')}</Text>
+      {open ? (
+        <Card style={styles.heardCard}>
+          {heard.map((h) => (
+            <View key={h.key} style={styles.heardRow}>
+              <Text variant="label" muted style={styles.heardLabel}>{t(`interview.parts.${h.key}`)}</Text>
+              <Text variant="label" muted={!h.lit} style={styles.heardValue}>{h.lit ? h.text : '—'}</Text>
             </View>
-          ))
-        : null}
+          ))}
+        </Card>
+      ) : (
+        <View style={styles.parts}>
+          {heard.map((h) => (
+            <View key={h.key} style={[styles.part, h.lit && styles.partLit]}>
+              <Text variant="caption" style={h.lit ? styles.partLitText : styles.partText}>{t(`interview.parts.${h.key}`)}</Text>
+            </View>
+          ))}
+        </View>
+      )}
     </Pressable>
   );
 }
@@ -143,6 +172,11 @@ function HeardStrip({ heard }: { heard: Heard[] }) {
 function Chat({ iv }: { iv: Iv }) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState('');
+  // "Correct something" reopens the answer box, asking what to fix, until the Coach sends the picture again.
+  const [correcting, setCorrecting] = useState(false);
+  useEffect(() => {
+    if (iv.step === 'picture') setCorrecting(false);
+  }, [iv.step]);
   const list = useRef<ChatListHandle>(null);
 
   const submit = (text: string) => {
@@ -152,6 +186,7 @@ function Chat({ iv }: { iv: Iv }) {
     void iv.send(trimmed);
     list.current?.scrollToEnd();
   };
+  const answering = iv.step === 'chat';
 
   return (
     <View style={styles.chat}>
@@ -171,15 +206,25 @@ function Chat({ iv }: { iv: Iv }) {
             ) : null}
           </View>
         )}
-        ListFooterComponent={iv.typing ? <TypingDots label={t('interview.typing')} /> : undefined}
+        ListFooterComponent={
+          iv.typing ? (
+            <TypingDots label={t('interview.typing')} />
+          ) : iv.step === 'shortName' ? (
+            <ShortNameCard iv={iv} />
+          ) : iv.step === 'picture' ? (
+            <PictureCard iv={iv} onCorrect={() => {
+              setCorrecting(true);
+              iv.correct();
+            }} />
+          ) : undefined
+        }
       />
       {iv.late ? (
         <View style={styles.pad}>
-          <Banner message={t('interview.lateStrip')} />
-          <Button title={t('interview.retry')} kind="quiet" onPress={() => void iv.retry()} />
+          <Banner message={t('interview.lateStrip')} action={t('interview.retry')} onPress={() => void iv.retry()} />
         </View>
       ) : null}
-      {iv.chips.length > 0 ? (
+      {answering && iv.chips.length > 0 ? (
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -192,42 +237,58 @@ function Chat({ iv }: { iv: Iv }) {
           ))}
         </ScrollView>
       ) : null}
-      <Composer
-        value={draft}
-        onChangeText={setDraft}
-        onSend={() => submit(draft)}
-        placeholder={t('interview.answerPlaceholder')}
-        sendLabel={t('interview.send')}
-      />
+      {answering ? (
+        <Composer
+          value={draft}
+          onChangeText={setDraft}
+          onSend={() => submit(draft)}
+          placeholder={t(correcting ? 'interview.fixPlaceholder' : 'interview.answerPlaceholder')}
+          sendLabel={t('interview.send')}
+        />
+      ) : null}
     </View>
   );
 }
 
-function ShortNameStep({ iv }: { iv: Iv }) {
+function fitsShortName(name: string) {
+  return SHORT_NAME_MAX >= name.trim().length;
+}
+
+/** The short name, asked inline in the chat once the Coach has the picture. */
+function ShortNameCard({ iv }: { iv: Iv }) {
   const { t } = useTranslation();
+  const { theme } = useUnistyles();
   const [name, setName] = useState(iv.shortName);
   const [tooLong, setTooLong] = useState(false);
-  const overLimit = name.trim().length > SHORT_NAME_MAX;
-  function use() {
-    setTooLong(!iv.chooseShortName(name));
-  }
+  const overLimit = !fitsShortName(name);
   return (
-    <ScrollView contentContainerStyle={styles.pad}>
-      <Text variant="heading">{t('interview.shortNameTitle')}</Text>
-      <Text muted>{t('interview.shortNameBody')}</Text>
+    <Card tone="accent">
+      <Text variant="caption" muted>{t('interview.shortNameTitle')}</Text>
+      <Text>{t('interview.shortNameBody', { name: name.trim() || iv.shortName })}</Text>
       <View style={styles.chips}>
-        {iv.shortNameSuggestions.map((s) => (
-          <Chip key={s} label={s} onPress={() => setName(s)} />
+        {iv.shortNameSuggestions.map((n) => (
+          <Pressable key={n} accessibilityRole="button" accessibilityState={{ selected: n === name }} onPress={() => setName(n)}
+            style={[styles.nameChip, n === name && styles.nameChipOn]}>
+            <Text variant="label" style={n === name ? styles.nameChipOnText : undefined}>{n}</Text>
+          </Pressable>
         ))}
       </View>
-      <TextInput style={styles.field} value={name} onChangeText={setName} maxLength={SHORT_NAME_MAX + 8} />
-      {tooLong || overLimit ? <Banner message={t('interview.shortNameTooLong')} /> : null}
-      <Button title={t('interview.shortNameUse')} disabled={!name.trim()} onPress={use} />
-    </ScrollView>
+      <TextInput
+        style={styles.nameInput}
+        value={name}
+        onChangeText={setName}
+        maxLength={SHORT_NAME_MAX}
+        placeholderTextColor={theme.colors.textMuted}
+        accessibilityLabel={t('interview.shortNameTitle')}
+      />
+      {tooLong || overLimit ? <Text variant="label" style={styles.warnText}>{t('interview.shortNameTooLong')}</Text> : null}
+      <Button title={t('interview.shortNameUse')} disabled={!name.trim()} onPress={() => setTooLong(!iv.chooseShortName(name))} style={styles.start} />
+    </Card>
   );
 }
 
-function PictureStep({ iv }: { iv: Iv }) {
+/** The confirmable picture, inline under the Coach's last words: the paragraph, then what it sets up. */
+function PictureCard({ iv, onCorrect }: { iv: Iv; onCorrect: () => void }) {
   const { t, i18n } = useTranslation();
   const [failed, setFailed] = useState(false);
   const p = iv.picture;
@@ -239,49 +300,36 @@ function PictureStep({ iv }: { iv: Iv }) {
     iv.confirm().catch(() => setFailed(true));
   };
   const rows: [string, string | undefined][] = [
+    [t('interview.rowShortName'), iv.shortName],
     [t('interview.rowHopedFor'), p.hopedForDate ? day(p.hopedForDate) : undefined],
-    [t('interview.rowSettleFor'), settle || undefined],
+    [t('interview.rowSettleFor'), settle],
     [t('interview.rowHours'), p.hoursPerWeek ? t('interview.rowHoursValue', { count: p.hoursPerWeek }) : undefined],
     [t('interview.rowSlots'), p.slots.length ? p.slots.join(', ') : undefined],
   ];
   return (
-    <ScrollView contentContainerStyle={styles.pad}>
-      <Pill label={iv.shortName} />
-      <Text variant="heading">{t('interview.pictureTitle')}</Text>
+    <Card tone="accent">
+      <Text variant="caption" muted>{t('interview.pictureTitle')}</Text>
       <Text>{p.text}</Text>
       {p.unknowns.length > 0 ? (
-        <Card>
-          <Text variant="label">{t('interview.unknownsTitle')}</Text>
-          {p.unknowns.map((u) => (
-            <Text key={u} muted>{u}</Text>
-          ))}
-        </Card>
+        <Text variant="label" muted style={styles.regular}>{t('interview.unknownsLine', { list: p.unknowns.join(' ') })}</Text>
       ) : null}
-      <Card>
+      <View style={styles.lines}>
         {rows
           .filter(([, v]) => v)
           .map(([label, value]) => (
-            <View key={label} style={styles.partRow}>
-              <Text variant="label">{label}</Text>
-              <Text>{value}</Text>
+            <View key={label} style={styles.line}>
+              <Text variant="label" muted style={[styles.lineLabel, styles.regular]}>{label}</Text>
+              <Text variant="label" style={styles.flex}>{value}</Text>
             </View>
           ))}
-      </Card>
-      {failed ? <Banner message={t('interview.confirmFailed')} /> : null}
-      <Button title={t('interview.thatsRight')} onPress={confirm} />
-      <Button title={t('interview.correct')} kind="secondary" onPress={iv.correct} />
-    </ScrollView>
-  );
-}
-
-function Done({ onClose }: { onClose: () => void }) {
-  const { t } = useTranslation();
-  return (
-    <View style={styles.pad}>
-      <Text variant="heading">{t('interview.done')}</Text>
-      <Text muted>{t('interview.doneBody')}</Text>
-      <Button title={t('interview.close')} onPress={onClose} />
-    </View>
+      </View>
+      {p.slots.length ? <Text variant="label" muted style={styles.regular}>{t('interview.slotsNote')}</Text> : null}
+      {failed ? <Text variant="label" style={styles.warnText}>{t('interview.confirmFailed')}</Text> : null}
+      <View style={styles.pair}>
+        <Button title={t('interview.thatsRight')} onPress={confirm} />
+        <Button title={t('interview.correct')} kind="secondary" onPress={onCorrect} />
+      </View>
+    </Card>
   );
 }
 
@@ -311,22 +359,31 @@ const styles = StyleSheet.create((theme) => ({
     borderColor: theme.colors.border,
     backgroundColor: theme.colors.surface,
   },
-  strip: {
-    padding: theme.space.md,
-    gap: theme.space.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-    backgroundColor: theme.colors.surface,
-  },
-  part: {
-    paddingHorizontal: theme.space.sm,
-    paddingVertical: theme.space.xs,
-    borderRadius: theme.radii.pill,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  partLit: { backgroundColor: theme.colors.accentTint, borderColor: theme.colors.accent },
-  partRow: { gap: theme.space.xs, paddingVertical: theme.space.xs },
+  top: { paddingHorizontal: theme.space.lg, paddingTop: theme.space.sm, gap: 6 },
+  progress: { height: 4, borderRadius: 2, backgroundColor: theme.colors.surfaceAlt, overflow: 'hidden' },
+  progressFill: { height: 4, borderRadius: 2, backgroundColor: theme.colors.accent },
+  strip: { gap: 6, paddingBottom: theme.space.sm },
+  stripHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  parts: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.space.xs },
+  part: { paddingHorizontal: theme.space.sm, paddingVertical: 2, borderRadius: theme.radii.pill, backgroundColor: theme.colors.surfaceAlt },
+  partLit: { backgroundColor: theme.colors.accentTint },
+  partText: { color: theme.colors.textMuted },
+  partLitText: { color: theme.colors.accent },
+  heardCard: { gap: theme.space.xs, paddingVertical: 10 },
+  heardRow: { flexDirection: 'row', gap: theme.space.sm },
+  heardLabel: { width: 96, fontWeight: '400' },
+  heardValue: { flex: 1, fontWeight: '400' },
+  nameChip: { paddingHorizontal: theme.space.md, paddingVertical: 6, borderRadius: theme.radii.pill, borderWidth: 1, borderColor: theme.colors.border },
+  nameChipOn: { backgroundColor: theme.colors.accent, borderColor: theme.colors.accent },
+  nameChipOnText: { color: theme.colors.onAccent },
+  nameInput: { maxWidth: 200, paddingVertical: 6, borderBottomWidth: 1, borderColor: theme.colors.border, color: theme.colors.text, ...theme.type.body },
+  warnText: { color: theme.colors.warn },
+  start: { alignSelf: 'flex-start', marginTop: theme.space.xs },
+  regular: { fontWeight: '400' },
+  lines: { gap: 2, marginTop: theme.space.xs },
+  line: { flexDirection: 'row', alignItems: 'center', gap: theme.space.sm, paddingVertical: theme.space.xs },
+  lineLabel: { width: 92 },
+  pair: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.space.sm, marginTop: 6 },
   chat: { flex: 1 },
   list: { flex: 1 },
   listContent: { padding: theme.space.lg, gap: theme.space.sm },
