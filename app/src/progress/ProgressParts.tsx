@@ -1,6 +1,7 @@
 import { View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { StyleSheet } from 'react-native-unistyles';
+import { StyleSheet, useUnistyles } from 'react-native-unistyles';
+import { Pill } from '../ui/Pill';
 import type { Hue } from '../theme/tokens';
 import { Text } from '../ui/Text';
 import { Pressable } from 'react-native';
@@ -9,12 +10,38 @@ import { useState } from 'react';
 import { Card } from '../ui/Card';
 import { lowerFirst, upperFirst } from '../i18n/text';
 
-/** A state pill: Too early, On track, Slipping, Ahead or Your call. */
+/** The colour of a Projection state: muted, done, warn or accent. */
+export function useStateColor() {
+  const { theme } = useUnistyles();
+  return (state: ProgressState) =>
+    ({ too_early: theme.colors.textMuted, on_track: theme.colors.done, slipping: theme.colors.warn, ahead: theme.colors.accent, past_settle_for: theme.colors.warn })[state] ??
+    theme.colors.textMuted;
+}
+
+/** A state pill outlined in its colour: Too early, On track, Slipping, Ahead or Your call. */
 export function StatePill({ state }: { state: ProgressState }) {
   const { t } = useTranslation();
+  const color = useStateColor();
+  return <Pill label={t(`progress.states.${state}`)} color={color(state)} />;
+}
+
+/** "Pace 85%", coloured by how close it is to the Plan. */
+export function PaceText({ pace }: { pace: number }) {
+  const { t } = useTranslation();
+  const { theme } = useUnistyles();
+  const color = pace >= 0.8 ? theme.colors.done : pace >= 0.6 ? theme.colors.partly : theme.colors.warn;
+  return <Text variant="label" style={{ color }}>{t('progress.pace', { percent: Math.round(pace * 100) })}</Text>;
+}
+
+/** Weeks kept up, as a row of dots (filled for the weeks kept). */
+export function WeekDots({ kept, of, hue }: { kept: number; of: number; hue?: Hue }) {
+  const { theme } = useUnistyles();
+  const color = hue ? theme.colors.hues[hue].solid : theme.colors.done;
   return (
-    <View style={[styles.pill, state === 'slipping' || state === 'past_settle_for' ? styles.warn : null]}>
-      <Text variant="caption">{t(`progress.states.${state}`)}</Text>
+    <View style={styles.weekDots}>
+      {Array.from({ length: of }, (_, i) => (
+        <View key={i} style={[styles.weekDot, i < kept ? { backgroundColor: color, borderColor: color } : null]} />
+      ))}
     </View>
   );
 }
@@ -29,12 +56,15 @@ export function ProjectionText({ projection }: { projection: Projection | null }
   );
 }
 
-/** A bar of filled and empty steps, one per Milestone. */
+/** A bar of steps, one per Milestone: reached in the hue, the current one half-tinted, the rest empty. */
 export function StepBar({ steps, hue }: { steps: boolean[]; hue: Hue }) {
+  const { theme } = useUnistyles();
+  const solid = theme.colors.hues[hue].solid;
+  const current = steps.indexOf(false);
   return (
     <View style={styles.steps}>
       {steps.map((reached, i) => (
-        <View key={i} style={[styles.step, reached ? styles.hueFill(hue) : null]} />
+        <View key={i} style={[styles.step, reached ? { backgroundColor: solid } : i === current ? { backgroundColor: `${solid}66` } : null]} />
       ))}
     </View>
   );
@@ -48,27 +78,35 @@ function Bar({ done, planned, hue }: { done: number; planned: number; hue: Hue }
   );
 }
 
-/** This week / Last week: hours given against planned in total, a bar per Aspiration by short name and hue, and one line. */
-export function WeekCardView({ title, week }: { title: string; week: WeekCard }) {
+/** This week / Last week as a toggle: hours given against planned, a bar per Aspiration, and one line. */
+export function WeekCardView({ thisWeek, lastWeek }: { thisWeek: WeekCard; lastWeek: WeekCard }) {
   const { t } = useTranslation();
+  const [last, setLast] = useState(false);
+  const week = last ? lastWeek : thisWeek;
   return (
-    <View style={styles.week}>
-      <View style={styles.row}>
-        <Text variant="label">{title}</Text>
-        <Text variant="label">{t('progress.hoursOf', { done: hoursLabel(week.doneMinutes), planned: hoursLabel(week.plannedMinutes) })}</Text>
+    <Card style={styles.week}>
+      <View style={styles.toggle}>
+        {([false, true] as const).map((isLast) => (
+          <Pressable key={String(isLast)} accessibilityRole="tab" accessibilityState={{ selected: last === isLast }} onPress={() => setLast(isLast)}
+            style={[styles.toggleItem, last === isLast && styles.toggleOn]}>
+            <Text variant="label" style={last === isLast ? styles.accentText : styles.mutedText}>{t(isLast ? 'progress.lastWeek' : 'progress.thisWeek')}</Text>
+          </Pressable>
+        ))}
       </View>
-      {week.aspirations.map((a) => (
-        <View key={a.aspirationId} style={styles.aspirationBar}>
-          <Text variant="caption" style={styles.shortName}>
-            {a.shortName}
-          </Text>
-          <Bar done={a.doneMinutes} planned={a.plannedMinutes} hue={a.hue} />
-        </View>
-      ))}
-      <Text muted variant="caption">
-        {t(`progress.weekLine.${week.line}`)}
-      </Text>
-    </View>
+      <Text variant="heading">{t('progress.hoursOfLong', { done: hoursLabel(week.doneMinutes), planned: hoursLabel(week.plannedMinutes) })}</Text>
+      <View style={styles.bars}>
+        {week.aspirations.map((a) => (
+          <View key={a.aspirationId} style={styles.barRow}>
+            <View style={styles.row}>
+              <Text variant="label" style={styles.regular}>{a.shortName}</Text>
+              <Text variant="label" muted style={styles.regular}>{t('progress.minutesOf', { done: a.doneMinutes, planned: a.plannedMinutes })}</Text>
+            </View>
+            <Bar done={a.doneMinutes} planned={a.plannedMinutes} hue={a.hue} />
+          </View>
+        ))}
+      </View>
+      <Text variant="label" muted style={styles.regular}>{t(`progress.weekLine.${week.line}`)}</Text>
+    </Card>
   );
 }
 
@@ -120,6 +158,16 @@ export function RouteStep({ milestone, hue, date }: { milestone: MilestoneRow; h
 }
 
 const styles = StyleSheet.create((theme) => ({
+  regular: { fontWeight: '400' },
+  accentText: { color: theme.colors.accent, fontWeight: '700' },
+  mutedText: { color: theme.colors.textMuted, fontWeight: '700' },
+  toggle: { flexDirection: 'row', gap: 6 },
+  toggleItem: { paddingHorizontal: 10, paddingVertical: theme.space.xs, borderRadius: theme.radii.pill },
+  toggleOn: { backgroundColor: theme.colors.accentTint },
+  bars: { gap: theme.space.sm },
+  barRow: { gap: 3 },
+  weekDots: { flexDirection: 'row', gap: theme.space.xs },
+  weekDot: { width: 12, height: 12, borderRadius: 6, borderWidth: 1.5, borderColor: theme.colors.border },
   pill: {
     alignSelf: 'flex-start',
     paddingHorizontal: theme.space.md,
@@ -131,14 +179,14 @@ const styles = StyleSheet.create((theme) => ({
   },
   warn: { backgroundColor: theme.colors.warningTint },
   steps: { flexDirection: 'row', gap: theme.space.xs },
-  step: { flex: 1, height: 6, borderRadius: theme.radii.pill, backgroundColor: theme.colors.border },
+  step: { flex: 1, height: 6, borderRadius: 3, backgroundColor: theme.colors.surfaceAlt },
   hueFill: (hue: Hue) => ({ backgroundColor: theme.colors.hues[hue].solid }),
   week: { gap: theme.space.sm },
   row: { flexDirection: 'row', justifyContent: 'space-between' },
   aspirationBar: { flexDirection: 'row', alignItems: 'center', gap: theme.space.sm },
   shortName: { width: 96 },
-  track: { flex: 1, height: 8, borderRadius: theme.radii.pill, backgroundColor: theme.colors.border, overflow: 'hidden' },
-  fill: { height: 8, borderRadius: theme.radii.pill },
+  track: { height: 6, borderRadius: 3, backgroundColor: theme.colors.surfaceAlt, overflow: 'hidden' },
+  fill: { height: 6, borderRadius: 3 },
   settle: { gap: theme.space.sm },
   settleHead: { gap: theme.space.xs },
   settleOption: { padding: theme.space.md, borderRadius: theme.radii.md, borderWidth: 1, borderColor: theme.colors.border },
