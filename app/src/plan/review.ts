@@ -25,9 +25,10 @@ export type PlanVersionView = {
   assumptions: string[];
   startDate: string;
   milestones: { id: string; date: string; title: string; reachedWhen: string; kind: 'effort' | 'ability'; state: string }[];
-  habits: { id: string; title: string; timesPerWeek: number; minutes: number; slots: string[] }[];
+  habits: { id: string; title: string; timesPerWeek: number; minutes: number; slots: string[]; anchor?: { words: string; time: string } | null }[];
   tasks: { id: string; title: string; minutes: number; due: string | null; milestone: string | null }[];
-  twoWeeks: { date: string; slot: string; action: string; kind: 'habit' | 'task'; minutes: number }[];
+  /** An Anchor Action carries its Anchor's words instead of a Slot and minutes. */
+  twoWeeks: { date: string; slot?: string | null; anchor?: string | null; action: string; kind: 'habit' | 'task'; minutes?: number | null }[];
   /** Set on a weekly refresh's version. */
   refreshId?: string | null;
   changes?: RefreshChanges | null;
@@ -78,6 +79,8 @@ export type PlanSummary = {
   draftLate: boolean;
   pendingVersionId: string | null;
   currentVersionId: string | null;
+  /** When the Plan in force was approved. */
+  currentApprovedAt?: string | null;
 };
 
 export type ApproveResult =

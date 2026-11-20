@@ -3,6 +3,8 @@ import { Pressable, ScrollView, View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet } from 'react-native-unistyles';
+import { formatDay } from '../i18n/dates';
+import { lowerFirst } from '../i18n/text';
 import { TALK_IT_THROUGH_ROUTE, changeRows, confirmFacts, confirmModel, landingTabFor, tabBar, tabsFor, type PlanTab, type PlanVersionView } from '../plan/review';
 import { usePlanReview } from '../plan/usePlan';
 import { askedFlag, phonePermissions } from '../reminders/native';
@@ -107,7 +109,13 @@ export default function PlanReviewScreen() {
       </ScrollView>
 
       <View style={styles.bar}>
-        {approved ? (
+        {!approved && version.status !== 'proposed' ? (
+          // Opened from the thread or the Aspiration: a version already decided has nothing to approve.
+          <>
+            <Text muted>{t(version.status === 'approved' ? 'plan.inForce' : 'plan.notInForce')}</Text>
+            <Button kind="secondary" title={t('plan.close')} onPress={() => router.back()} />
+          </>
+        ) : approved ? (
           <>
             <Text variant="heading">{t(isRefresh ? 'plan.changes.applied' : 'plan.started')}</Text>
             <Button title={t('plan.close')} onPress={() => router.replace('/')} />
@@ -132,10 +140,14 @@ export default function PlanReviewScreen() {
             <Button kind="quiet" title={t('plan.notYet')} onPress={() => setConfirming(false)} />
           </>
         ) : (
-          <>
-            <Button title={t('plan.approve')} disabled={review.approving} onPress={() => setConfirming(true)} />
-            <Button kind="quiet" title={t('plan.talkItThrough')} onPress={() => router.replace(TALK_IT_THROUGH_ROUTE)} />
-          </>
+          <View style={styles.pair}>
+            <View style={styles.half}>
+              <Button kind="secondary" title={t('plan.talkItThrough')} onPress={() => router.replace(TALK_IT_THROUGH_ROUTE)} />
+            </View>
+            <View style={styles.half}>
+              <Button title={t('plan.approve')} disabled={review.approving} onPress={() => setConfirming(true)} />
+            </View>
+          </View>
         )}
       </View>
     </View>
@@ -168,17 +180,17 @@ function Changes({ version }: { version: PlanVersionView }) {
 }
 
 function Route({ version }: { version: PlanVersionView }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   return (
     <View style={styles.section}>
       {version.milestones.map((m) => (
         <Card key={m.id}>
-          <Text variant="label" muted>{m.date}</Text>
+          <Text variant="label" muted>{formatDay(m.date, { locale: i18n.language })}</Text>
           <Text variant="heading">{m.title}</Text>
-          <Text muted>{t('plan.reachedWhen', { text: m.reachedWhen })}</Text>
+          <Text muted>{t('plan.reachedWhen', { text: lowerFirst(m.reachedWhen) })}</Text>
           <Text variant="caption" muted>{t(`plan.kind.${m.kind}`)}</Text>
           {version.tasks.filter((x) => x.milestone === m.title).map((x) => (
-            <Text key={x.id}>{t('plan.task', { title: x.title, minutes: x.minutes, due: x.due ?? t('plan.thisWeek') })}</Text>
+            <Text key={x.id}>{t('plan.task', { title: x.title, minutes: x.minutes, due: x.due ? formatDay(x.due, { locale: i18n.language }) : t('plan.thisWeek') })}</Text>
           ))}
         </Card>
       ))}
@@ -189,16 +201,18 @@ function Route({ version }: { version: PlanVersionView }) {
 const dateOf = (a: PlanVersionView['twoWeeks'][number]) => a.date;
 
 function TwoWeeks({ version }: { version: PlanVersionView }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const days = Array.from(new Set(version.twoWeeks.map(dateOf))).sort();
   return (
     <View style={styles.section}>
-      <Text muted>{t('plan.nothingScheduled')}</Text>
+      {version.status === 'proposed' ? <Text muted>{t('plan.nothingScheduled')}</Text> : null}
       {days.map((day) => (
         <Card key={day}>
-          <Text variant="label" muted>{day}</Text>
+          <Text variant="label" muted>{formatDay(day, { locale: i18n.language })}</Text>
           {version.twoWeeks.filter((a) => a.date === day).map((a) => (
-            <Text key={`${a.date}-${a.action}-${a.slot}`}>{t('plan.action', { title: a.action, slot: a.slot, minutes: a.minutes })}</Text>
+            <Text key={`${a.date}-${a.action}-${a.slot ?? a.anchor}`}>
+              {a.anchor ? t('plan.anchorAction', { title: a.action, anchor: a.anchor }) : t('plan.action', { title: a.action, slot: a.slot, minutes: a.minutes })}
+            </Text>
           ))}
         </Card>
       ))}
@@ -214,7 +228,11 @@ function Habits({ version }: { version: PlanVersionView }) {
       {version.habits.map((h) => (
         <Card key={h.id}>
           <Text variant="heading">{h.title}</Text>
-          <Text muted>{t('plan.habit', { count: h.timesPerWeek, minutes: h.minutes, slots: h.slots.join(', ') })}</Text>
+          <Text muted>
+            {h.anchor
+              ? t('plan.anchorHabit', { count: h.timesPerWeek, anchor: h.anchor.words, time: h.anchor.time })
+              : t('plan.habit', { count: h.timesPerWeek, minutes: h.minutes, slots: h.slots.join(', ') })}
+          </Text>
         </Card>
       ))}
     </View>
@@ -236,7 +254,7 @@ function Assumes({ version }: { version: PlanVersionView }) {
   );
 }
 
-const styles = StyleSheet.create((theme) => ({
+const styles = StyleSheet.create((theme, rt) => ({
   container: { flex: 1, backgroundColor: theme.colors.background },
   pad: { padding: theme.space.lg, gap: theme.space.lg },
   section: { gap: theme.space.md },
@@ -255,9 +273,13 @@ const styles = StyleSheet.create((theme) => ({
   tabOnText: { color: theme.colors.onAccent },
   struck: { textDecorationLine: 'line-through' },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: theme.colors.danger },
+  pair: { flexDirection: 'row', gap: theme.space.sm },
+  half: { flex: 1 },
   bar: {
     gap: theme.space.sm,
     padding: theme.space.lg,
+    // Pinned to the bottom: clear the nav bar.
+    paddingBottom: theme.space.lg + rt.insets.bottom,
     borderTopWidth: 1,
     borderTopColor: theme.colors.border,
     backgroundColor: theme.colors.surface,

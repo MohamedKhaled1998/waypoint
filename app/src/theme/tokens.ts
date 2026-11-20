@@ -24,6 +24,7 @@ export const lightTheme = {
   colors: {
     background: '#F6F6F9',
     surface: '#FFFFFF',
+    surfaceAlt: '#EFEFF6',
     border: '#E2E2EA',
     text: '#16161D',
     textMuted: '#6B6B7B',
@@ -56,6 +57,7 @@ export const darkTheme = {
   colors: {
     background: '#121214',
     surface: '#1C1C20',
+    surfaceAlt: '#1E1E29',
     border: '#32323A',
     text: '#F2F2F5',
     textMuted: '#A0A0AE',

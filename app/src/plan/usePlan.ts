@@ -26,15 +26,19 @@ export function usePlanReview(versionId: string) {
 export function usePlanSummaries() {
   const session = useSession();
   const [plans, setPlans] = useState<PlanSummary[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const refresh = useCallback(() => {
     httpPlanApi(session)
       .summaries()
-      .then(setPlans)
+      .then((p) => {
+        setPlans(p);
+        setLoaded(true);
+      })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.status]);
   useFocusEffect(refresh);
-  return { plans, refresh };
+  return { plans, loaded, refresh };
 }
 
 /** What Today shows about the Plan: drafting, late (with a retry), or which proposal waits. */

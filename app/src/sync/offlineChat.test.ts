@@ -60,6 +60,50 @@ describe('messages to the Coach', () => {
   });
 });
 
+describe('a message sent online', () => {
+  const reply = (replied: boolean) =>
+    empty({
+      cursor: 2,
+      changes: [
+        { kind: 'chat_message' as const, id: 's1', deleted: false, data: { id: 's1', role: 'user', text: 'hi', clientId: 'm1', createdAt: '2026-01-05T09:00:00Z', replied } },
+        ...(replied ? [{ kind: 'chat_message' as const, id: 's2', deleted: false, data: { id: 's2', role: 'coach', text: 'Hello', clientId: null, createdAt: '2026-01-05T09:00:02Z', replied: true } }] : []),
+      ],
+    });
+
+  it('shows the Coach typing while it waits, then the reply, and never says the Coach is late', async () => {
+    const { storage, sync, state } = phone();
+    state.online = true;
+    state.pulls.push(reply(true));
+    const api = offlineCoachApi({ storage, sync, now: () => '2026-01-05T09:00:00Z' });
+    const chat = createCoachChat(api, { newId: () => 'm1', now: () => '2026-01-05T09:00:00Z', retryDelaysMs: [1_000_000] });
+
+    const sending = chat.send('hi');
+    expect(chat.state.typing).toBe(true);
+    expect(chat.state.late).toBe(false);
+    await sending;
+    await chat.load();
+
+    expect(chat.state.messages.map((m) => [m.role, m.text, m.status])).toEqual([['user', 'hi', 'sent'], ['coach', 'Hello', 'sent']]);
+    expect(chat.state.typing).toBe(false);
+    expect(chat.state.late).toBe(false);
+    chat.dispose();
+  });
+
+  it('is Saved and the Coach late when the server kept it but had no reply', async () => {
+    const { storage, sync, state } = phone();
+    state.online = true;
+    state.pulls.push(reply(false));
+    const api = offlineCoachApi({ storage, sync, now: () => '2026-01-05T09:00:00Z' });
+    const chat = createCoachChat(api, { newId: () => 'm1', now: () => '2026-01-05T09:00:00Z', retryDelaysMs: [1_000_000] });
+
+    await chat.send('hi');
+
+    expect(chat.state.messages.map((m) => [m.text, m.status])).toEqual([['hi', 'saved']]);
+    expect(chat.state.late).toBe(true);
+    chat.dispose();
+  });
+});
+
 describe('Plan approvals', () => {
   const version = (id: string) => ({ id, status: 'proposed' }) as PlanVersionView;
 

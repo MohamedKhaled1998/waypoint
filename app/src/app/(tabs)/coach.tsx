@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, Pressable, TextInput, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Pressable, View } from 'react-native';
+import { KeyboardPadded } from '../../ui/KeyboardPadded';
 import { useTranslation } from 'react-i18next';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { StyleSheet, useUnistyles } from 'react-native-unistyles';
+import { StyleSheet } from 'react-native-unistyles';
 import { groupByDay, type ChatMessage } from '../../coach/chat';
 import { chipLabel, filterThread, quickReplies, tagOf } from '../../coach/threads';
 import { markThreadRead } from '../../coach/unread';
@@ -12,7 +12,9 @@ import { useCoachChat } from '../../coach/useCoachChat';
 import { pauseFromCard, waitingItems, type PauseCardData } from '../../coach/waiting';
 import { usePauses } from '../../pause/usePauses';
 import { usePlanSummaries } from '../../plan/usePlan';
-import { useKeyboardHeight } from '../../coach/useKeyboardHeight';
+import { AnswerChip, Bubble, ChatList, CoachText, Composer, TypingDots, UserText, type ChatListHandle } from '../../ui/chat/Chat';
+import { formatDay } from '../../i18n/dates';
+import { proposalState } from '../../coach/proposal';
 import { Banner } from '../../ui/Banner';
 import { Button } from '../../ui/Button';
 import { Card } from '../../ui/Card';
@@ -28,13 +30,10 @@ type Row =
 const hasClientId = (clientId: string) => (p: { clientId: string }) => p.clientId === clientId;
 
 export default function CoachScreen() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const router = useRouter();
-  const { theme } = useUnistyles();
-  const insets = useSafeAreaInsets();
-  const keyboard = useKeyboardHeight();
   const { messages, typing, late, send } = useCoachChat();
-  const { plans } = usePlanSummaries();
+  const { plans, loaded: plansLoaded } = usePlanSummaries();
   const paused = usePauses(plans);
   const waiting = useMemo(() => waitingItems(messages, plans, paused.pauses, new Date()), [messages, plans, paused.pauses]);
   const startPause = (card: PauseCardData) => {
@@ -54,7 +53,11 @@ export default function CoachScreen() {
   // Opened from an Aspiration: the message starts from what the user chose, and they decide whether to send it.
   // The Aspiration the next message is about, and what the user chose: sent with the message so the Coach has the context.
   const [scope, setScope] = useState<CoachContext | null>(null);
-  const list = useRef<FlatList<Row>>(null);
+  const list = useRef<ChatListHandle>(null);
+  // What the thread held when it first loaded is history; a Coach message that arrives after that is live.
+  const history = useRef<Set<string> | null>(null);
+  if (history.current === null && messages.length > 0) history.current = new Set(messages.map((m) => m.id));
+  const isLive = (m: ChatMessage) => m.status === 'sending' || (history.current !== null && !history.current.has(m.id));
   useEffect(() => {
     if (!params.aspirationId || !isCoachIntent(params.intent)) return;
     setScope({ aspirationId: params.aspirationId, intent: params.intent });
@@ -80,10 +83,6 @@ export default function CoachScreen() {
     markThreadRead(messages.at(-1)?.createdAt ?? new Date().toISOString());
   }, [messages]);
 
-  useEffect(() => {
-    list.current?.scrollToEnd({ animated: true });
-  }, [rows.length, messages.at(-1)?.text]);
-
   const renderRow = (item: Row) => {
     if (item.kind === 'day') {
       return (
@@ -94,9 +93,7 @@ export default function CoachScreen() {
     }
     if (item.kind === 'typing') {
       return (
-        <View style={[styles.bubble, styles.coach]} accessibilityLabel={t('coach.typing')}>
-          <Text muted>•••</Text>
-        </View>
+        <TypingDots label={t('coach.typing')} />
       );
     }
     if (item.message.card === 'proposal' && item.message.cardData?.planVersionId) {
@@ -104,11 +101,27 @@ export default function CoachScreen() {
       const reason = item.message.cardData.reason;
       const kind = reason === 'time_budget_cut' ? 'cut' : reason === 're_plan' ? 'rePlan' : null;
       const name = item.message.cardData.shortName;
+      const state = proposalState(versionId, plansLoaded ? plans : null);
       return (
         <Card hue={item.message.cardData.hue}>
           <Text variant="heading">{kind ? t(`plan.${kind}Title`, { name }) : t('plan.proposalTitle', { name })}</Text>
-          <Text muted>{kind ? t(`plan.${kind}Body`) : t('plan.proposalBody')}</Text>
-          <Button title={t('plan.review')} onPress={() => review(versionId)} />
+          {state.kind === 'waiting' ? (
+            <>
+              <Text muted>{kind ? t(`plan.${kind}Body`) : t('plan.proposalBody')}</Text>
+              <Button title={t('plan.review')} onPress={() => review(versionId)} />
+            </>
+          ) : state.kind === 'approved' ? (
+            <>
+              <Text muted>
+                {state.approvedOn
+                  ? t('plan.proposalApprovedOn', { date: formatDay(state.approvedOn, { locale: i18n.language, weekday: false }) })
+                  : t('plan.proposalApproved')}
+              </Text>
+              <Button kind="secondary" title={t('plan.openPlan')} onPress={() => review(versionId)} />
+            </>
+          ) : (
+            <Text muted>{t('plan.proposalPast')}</Text>
+          )}
         </Card>
       );
     }
@@ -171,9 +184,9 @@ export default function CoachScreen() {
             <Text variant="caption" muted>{chipLabel(tag.label)}</Text>
           </View>
         ) : null}
-        <View style={[styles.bubble, mine ? styles.mine : styles.coach]}>
-          <Text style={mine ? styles.mineText : undefined}>{item.message.text}</Text>
-        </View>
+        <Bubble mine={mine}>
+          {mine ? <UserText text={item.message.text} /> : <CoachText id={item.message.id} text={item.message.text} live={isLive(item.message)} />}
+        </Bubble>
         {item.message.status === 'saved' ? (
           <Text variant="caption" muted style={styles.saved}>
             {t('coach.saved')}
@@ -190,10 +203,11 @@ export default function CoachScreen() {
     setScope(null);
     // A message opened from an Aspiration's button is about that Aspiration; otherwise the filter's.
     void send(text, scope?.aspirationId ?? filter ?? undefined, scope?.intent);
+    list.current?.scrollToEnd();
   };
 
   return (
-    <View style={[styles.container, { paddingBottom: Math.max(keyboard, insets.bottom) }]}>
+    <KeyboardPadded style={styles.container}>
       {aspirations.length > 1 ? (
         <View style={styles.filters}>
           <FilterChip label={t('coach.filterAll')} selected={filter === null} onPress={() => setFilter(null)} />
@@ -225,19 +239,25 @@ export default function CoachScreen() {
           ))}
         </View>
       ) : null}
-      <FlatList
-        ref={list}
-        style={styles.list}
-        contentContainerStyle={styles.listContent}
-        data={rows}
-        keyExtractor={(r) => r.key}
-        ListEmptyComponent={<Text muted style={styles.empty}>{t('coach.emptyBody')}</Text>}
-        renderItem={({ item }) => renderRow(item)}
-      />
+      {rows.length === 0 ? (
+        // Outside the inverted list, which would draw an empty state upside down.
+        <View style={styles.list}>
+          <Text muted style={styles.empty}>{t('coach.emptyBody')}</Text>
+        </View>
+      ) : (
+        <ChatList
+          ref={list}
+          style={styles.list}
+          contentContainerStyle={styles.listContent}
+          data={rows}
+          keyExtractor={(r) => r.key}
+          renderItem={({ item }) => renderRow(item)}
+        />
+      )}
       {replies.length > 0 ? (
         <View style={styles.replies}>
           {replies.map((r) => (
-            <FilterChip key={r} label={r} selected={false} onPress={() => void send(r)} />
+            <AnswerChip key={r} label={r} onPress={() => { void send(r); list.current?.scrollToEnd(); }} />
           ))}
         </View>
       ) : null}
@@ -246,20 +266,14 @@ export default function CoachScreen() {
           <Banner message={t('coach.lateStrip')} />
         </View>
       ) : null}
-      <View style={styles.inputBar}>
-        <TextInput
-          style={styles.input}
-          value={draft}
-          onChangeText={setDraft}
-          placeholder={t('coach.inputPlaceholder')}
-          placeholderTextColor={theme.colors.textMuted}
-          multiline
-        />
-        <Pressable accessibilityRole="button" accessibilityLabel={t('coach.send')} onPress={submit} style={styles.sendButton}>
-          <Text variant="label" style={styles.sendText}>{t('coach.send')}</Text>
-        </Pressable>
-      </View>
-    </View>
+      <Composer
+        value={draft}
+        onChangeText={setDraft}
+        onSend={submit}
+        placeholder={t('coach.inputPlaceholder')}
+        sendLabel={t('coach.send')}
+      />
+    </KeyboardPadded>
   );
 }
 
@@ -298,33 +312,8 @@ const styles = StyleSheet.create((theme) => ({
   empty: { textAlign: 'center', marginTop: theme.space.xl },
   day: { textAlign: 'center', marginVertical: theme.space.sm },
   row: { gap: theme.space.xs },
-  bubble: { maxWidth: '85%', padding: theme.space.md, borderRadius: theme.radii.md },
-  mine: { alignSelf: 'flex-end', backgroundColor: theme.colors.accent },
-  mineText: { color: theme.colors.onAccent },
-  coach: { alignSelf: 'flex-start', backgroundColor: theme.colors.surface, ...theme.shadow },
   saved: { alignSelf: 'flex-end' },
   strip: { paddingHorizontal: theme.space.lg, paddingBottom: theme.space.sm },
-  inputBar: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: theme.space.sm,
-    padding: theme.space.md,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.border,
-    backgroundColor: theme.colors.surface,
-  },
-  input: {
-    flex: 1,
-    maxHeight: 120,
-    paddingHorizontal: theme.space.md,
-    paddingVertical: theme.space.sm,
-    borderRadius: theme.radii.md,
-    backgroundColor: theme.colors.background,
-    color: theme.colors.text,
-    ...theme.type.body,
-  },
-  sendButton: { paddingHorizontal: theme.space.lg, paddingVertical: theme.space.md, borderRadius: theme.radii.pill, backgroundColor: theme.colors.accent },
-  sendText: { color: theme.colors.onAccent },
 }));
 
 function withheldArea(w: { area: string }): string {

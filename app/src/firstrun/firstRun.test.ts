@@ -1,4 +1,4 @@
-import { createFirstRun, interviewResume, resumeDecision, stepCounter, type KeyValueStore } from './firstRun';
+import { createFirstRun, interviewResume, resumeDecision, stepCounter, tourCard, type KeyValueStore } from './firstRun';
 
 function memoryStore(): KeyValueStore & { data: Map<string, string> } {
   const data = new Map<string, string>();
@@ -172,5 +172,20 @@ describe('what reopening does at each step', () => {
     ['it is not first run', { inFirstRun: false, opened: true, started: false, hasWords: false }],
   ])('stays on the Interview when %s', (_, input) => {
     expect(interviewResume(input)).toBe('stay');
+  });
+});
+
+describe('tourCard', () => {
+  test('step 1 shows only over a Now card', () => {
+    expect(tourCard('tourTry', true)).toBe('try');
+  });
+  test('a rest day waits for the first Action', () => {
+    expect(tourCard('tourTry', false)).toBe('waiting');
+  });
+  test('the wrap-up shows whatever the day holds', () => {
+    expect(tourCard('tourWrapUp', false)).toBe('wrapUp');
+  });
+  test('no tour once it is done', () => {
+    expect(tourCard('done', true)).toBeNull();
   });
 });

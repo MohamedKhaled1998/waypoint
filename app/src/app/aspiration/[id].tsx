@@ -20,6 +20,8 @@ import { Card } from '../../ui/Card';
 import { HeaderButton } from '../../ui/HeaderButton';
 import { EmptyState } from '../../ui/Screen';
 import { Text } from '../../ui/Text';
+import { formatDay } from '../../i18n/dates';
+import { settleForLine } from '../../aspiration/settleFor';
 
 const tabs = ['route', 'measure', 'habits', 'plan'] as const;
 const FEW_DAYS = [2, 3, 5, 7] as const;
@@ -42,7 +44,7 @@ export default function AspirationScreen() {
   const { actions, setHabitReminder } = useToday();
   const today = localNow().date;
   if (!a) return <EmptyState title={failed ? t('progress.loadFailed') : t('common.loading')} body="" />;
-  const date = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString(i18n.language, { day: 'numeric', month: 'long', year: 'numeric' });
+  const date = (iso: string) => formatDay(iso, { locale: i18n.language, weekday: false });
   const habits = buildHabits(actions, id ?? '', today);
   const status = a.status ?? 'active';
   const api = httpLifecycleApi(session);
@@ -121,7 +123,9 @@ export default function AspirationScreen() {
       <Card hue={a.hue} style={styles.header}>
         <Text variant="title">{a.ownWords}</Text>
         <Text muted>{t('progress.hoped', { date: date(a.hopedForDate) })}</Text>
-        {a.settleForDate ? <Text muted>{t('progress.settle', { date: date(a.settleForDate) })}</Text> : null}
+        {a.settleForDate || a.settleForPicture ? (
+          <Text muted>{t('progress.settle', { what: settleForLine(t, a.settleForPicture, a.settleForDate ? date(a.settleForDate) : null) })}</Text>
+        ) : null}
         <Text>{t(`progress.paceWords.${a.paceWords}`)}</Text>
       </Card>
       {status === 'closed' ? null : a.consistency ? (

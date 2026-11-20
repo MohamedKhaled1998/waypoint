@@ -140,6 +140,34 @@ describe('Coach chat', () => {
   });
 });
 
+describe('a reload while a message is on its way', () => {
+  it('keeps it sending, with the Coach typing and not late', async () => {
+    const api = fakeApi();
+    let finish!: () => void;
+    const c = chat(api);
+    api.script = (onEvent) =>
+      new Promise<void>((resolve) => {
+        finish = () => {
+          onEvent({ name: 'done', data: {} });
+          resolve();
+        };
+      });
+
+    const sending = c.send('On its way');
+    const clientId = c.state.messages[0]!.clientId!;
+    // Queued, not yet answered: the thread read back has it unanswered.
+    api.server = [{ id: 's1', role: 'user', text: 'On its way', clientId, createdAt: '2026-01-05T09:00:00Z', replied: false }];
+    await new Promise((r) => setTimeout(r, 0));
+    await c.load();
+
+    expect(c.state.messages.map((m) => m.status)).toEqual(['sending']);
+    expect(c.state.typing).toBe(true);
+    expect(c.state.late).toBe(false);
+    finish();
+    await sending;
+  });
+});
+
 describe('Coach late', () => {
   afterEach(() => jest.useRealTimers());
 

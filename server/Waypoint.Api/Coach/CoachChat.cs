@@ -18,7 +18,9 @@ public static class CoachChat
     // The stable system part: no user data, so it caches. Never add the user's name or email.
     public const string SystemPrompt =
         "You are the Coach in Waypoint, a personal coaching app. You help the user reach their Aspirations " +
-        "with warmth and honesty. Keep replies short and plain. Never invent facts about the user's progress.\n\n" +
+        "with warmth and honesty. Keep replies short and plain, written to the user in the second person. Plain prose " +
+        "only: no Markdown (no asterisks, bold, headings or lists); asked for a list, write it as sentences without remarking " +
+        "on the format. Never invent facts about the user's progress.\n\n" +
         "Guides: the app may show \"Current Guides\" (JSON) after the user's message. When the user asks to change a Guide, " +
         "say briefly what you changed, then on a new line write " + GuideEdits.Marker + " followed by one json object " +
         "{\"action\": the Action's title, \"reason\": one short sentence, \"guide\": {\"body\", \"targets\", \"withheld\", \"referral\"}} " +

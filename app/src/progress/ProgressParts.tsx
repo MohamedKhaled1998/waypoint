@@ -7,6 +7,7 @@ import { Pressable } from 'react-native';
 import { hoursLabel, projectionLine, type MilestoneRow, type Projection, type ProgressState, type SettleChoice, type SettleOption, type WeekCard } from './progress';
 import { useState } from 'react';
 import { Card } from '../ui/Card';
+import { lowerFirst, upperFirst } from '../i18n/text';
 
 /** A state pill: Too early, On track, Slipping, Ahead or Your call. */
 export function StatePill({ state }: { state: ProgressState }) {
@@ -23,7 +24,7 @@ export function ProjectionText({ projection }: { projection: Projection | null }
   if (!projection) return null;
   return (
     <Text muted variant="caption">
-      {projectionLine(projection, (key, values) => t(key, values ?? {}))}
+      {upperFirst(projectionLine(projection, (key, values) => t(key, values ?? {})))}
     </Text>
   );
 }
@@ -108,10 +109,11 @@ export function RouteStep({ milestone, hue, date }: { milestone: MilestoneRow; h
           {t('progress.plannedFor', { date })}
         </Text>
         <Text muted variant="caption">
-          {t('progress.reachedWhen', { line: milestone.reachedWhen })}
+          {t('progress.reachedWhen', { line: lowerFirst(milestone.reachedWhen) })}
         </Text>
-        <ProjectionText projection={milestone.projection} />
-        {milestone.pill ? <StatePill state={milestone.pill} /> : null}
+        {/* Only the next Milestone says where it stands; the rest would repeat it. */}
+        {milestone.youAreHere ? <ProjectionText projection={milestone.projection} /> : null}
+        {milestone.youAreHere && milestone.pill ? <StatePill state={milestone.pill} /> : null}
       </View>
     </View>
   );

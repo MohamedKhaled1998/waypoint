@@ -67,6 +67,8 @@ export function createCoachChat(api: CoachApi, deps: Deps) {
     async load() {
       const stored = await api.history();
       const known = new Set(stored.map((m) => m.clientId));
+      // A message being delivered right now reads back unanswered: it is on its way, not Saved.
+      const onItsWay = new Set(chat.state.messages.filter((m) => m.status === 'sending' && m.clientId).map((m) => m.clientId!));
       const local = chat.state.messages.filter((m) => m.clientId && m.status !== 'sent' && !known.has(m.clientId));
       set({
         messages: [
@@ -81,7 +83,7 @@ export function createCoachChat(api: CoachApi, deps: Deps) {
               card: m.card ?? undefined,
               cardData: m.cardData ?? undefined,
               // Stored but unanswered: still Saved, and resent with its client ID.
-              status: m.role === 'user' && !m.replied ? 'saved' : 'sent',
+              status: m.role === 'user' && !m.replied ? (m.clientId && onItsWay.has(m.clientId) ? 'sending' : 'saved') : 'sent',
             }),
           ),
           ...local,
@@ -99,6 +101,8 @@ export function createCoachChat(api: CoachApi, deps: Deps) {
           ...chat.state.messages,
           { id: clientId, clientId, role: 'user', text, createdAt: deps.now(), status: 'sending', aspirationId, intent },
         ],
+        // The Coach starts "typing" the moment the message shows, not once its delivery comes up in the queue.
+        typing: true,
       });
       return enqueue(() => deliver(clientId));
     },

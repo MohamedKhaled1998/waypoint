@@ -68,6 +68,7 @@ public sealed class PlanTests(WaypointApiFactory factory) : PlanTestBase(factory
 
         var done = await PlansAsync(c, aspirationId);
         Assert.Equal(versionId, done.GetProperty("currentVersionId").GetGuid());
+        Assert.Equal(factory.Clock.GetUtcNow().UtcDateTime, done.GetProperty("currentApprovedAt").GetDateTime());
         Assert.Equal(JsonValueKind.Null, done.GetProperty("pendingVersionId").ValueKind);
     }
 

@@ -1,4 +1,5 @@
 import '../theme/unistyles';
+import { applySavedAppearance } from '../theme/appearance';
 import '../i18n';
 import { Stack, useRouter } from 'expo-router';
 import * as Notifications from 'expo-notifications';
@@ -15,9 +16,12 @@ import { batteryHintFor } from '../pause/battery';
 import { registerPushToken, routeForPush } from '../push/push';
 import { SessionProvider, useSession } from '../auth/SessionProvider';
 import { View } from 'react-native';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { resumeDecision } from '../firstrun/firstRun';
 import { httpPlanApi } from '../plan/api';
 import { firstRun, settlePermissions, useFirstRun } from '../firstrun/native';
+
+applySavedAppearance();
 
 function Routes() {
   const { status, phone, getAccessToken, renewAccess } = useSession();
@@ -124,10 +128,12 @@ function Routes() {
 export default function RootLayout() {
   const { theme } = useUnistyles();
   return (
-    <SessionProvider>
-      <StatusBar style={theme.isDark ? 'light' : 'dark'} />
-      <Routes />
-    </SessionProvider>
+    <KeyboardProvider>
+      <SessionProvider>
+        <StatusBar style={theme.isDark ? 'light' : 'dark'} />
+        <Routes />
+      </SessionProvider>
+    </KeyboardProvider>
   );
 }
 

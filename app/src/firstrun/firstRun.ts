@@ -102,6 +102,16 @@ export function resumeDecision(step: FirstRunStep | null, planVersionId: string 
   }
 }
 
+/**
+ * The Today tour's card. Step 1 points at the Now card's ✓, so it shows only when there is a Now card; until then
+ * (a rest day, or everything checked in) Today says when the first Action is, and the tour waits for it.
+ */
+export function tourCard(step: FirstRunStep | null, hasNowCard: boolean): 'try' | 'waiting' | 'wrapUp' | null {
+  if (step === 'tourTry') return hasNowCard ? 'try' : 'waiting';
+  if (step === 'tourWrapUp') return 'wrapUp';
+  return null;
+}
+
 /** The Interview step with no Interview on the server and no words to start one repeats the Aspiration step. */
 export function interviewResume(i: { inFirstRun: boolean; opened: boolean; started: boolean; hasWords: boolean }): 'aspiration' | 'stay' {
   return i.inFirstRun && i.opened && !i.started && !i.hasWords ? 'aspiration' : 'stay';

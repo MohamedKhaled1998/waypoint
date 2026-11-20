@@ -4,6 +4,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet } from 'react-native-unistyles';
 import { firstRun, useFirstRun } from '../../firstrun/native';
+import { tourCard } from '../../firstrun/firstRun';
+import { formatDay } from '../../i18n/dates';
 import { useUnfinishedInterview } from '../../interview/useInterview';
 import { remindersLookDead } from '../../pause/battery';
 import { todayPausedLine } from '../../pause/pause';
@@ -12,7 +14,7 @@ import { openBatterySettings } from '../../push/native';
 import { usePlanBanners, usePlanSummaries } from '../../plan/usePlan';
 import { ActionSheet } from '../../today/ActionSheet';
 import { AspirationChips, NowCard, NowLine, TimelineRow, WaitingPill } from '../../today/TodayParts';
-import { buildToday, type CheckInState, type ScheduledActionView } from '../../today/today';
+import { buildToday, timeLabel, type CheckInState, type ScheduledActionView } from '../../today/today';
 import { actionById, localNow, useToday } from '../../today/useToday';
 import { Banner } from '../../ui/Banner';
 import { Button } from '../../ui/Button';
@@ -21,7 +23,7 @@ import { EmptyState } from '../../ui/Screen';
 import { Text } from '../../ui/Text';
 
 export default function TodayScreen() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const router = useRouter();
   const unfinished = useUnfinishedInterview();
   const { drafting, late, retryDraft, waitingVersionId } = usePlanBanners();
@@ -49,6 +51,7 @@ export default function TodayScreen() {
   const hour = Number(now.time.slice(0, 2));
   const greeting = t(hour < 12 ? 'today.greeting.morning' : hour < 18 ? 'today.greeting.afternoon' : 'today.greeting.evening');
   const nowId = today.nowCard?.action.id;
+  const tour = tourCard(tourStep, !!today.nowCard);
   const undoAction = actionById(actions, undo?.scheduledActionId);
 
   const pills = (
@@ -71,14 +74,27 @@ export default function TodayScreen() {
           </View>
         ) : null}
         {unfinished || waitingVersionId ? pills : null}
-        {tourStep === 'tourTry' ? (
+        {tour === 'waiting' && today.tomorrowFirst ? (
+          <Card>
+            <Text variant="caption" muted>{t('firstRun.step', { n: 1, of: 2 })}</Text>
+            <Text variant="heading">{t('firstRun.tour.waitTitle')}</Text>
+            <Text muted>
+              {t('firstRun.tour.waitBody', {
+                title: today.tomorrowFirst.title,
+                day: formatDay(today.tomorrowFirst.date, { locale: i18n.language }),
+                time: timeLabel(today.tomorrowFirst),
+              })}
+            </Text>
+          </Card>
+        ) : null}
+        {tour === 'try' ? (
           <Card>
             <Text variant="caption" muted>{t('firstRun.step', { n: 1, of: 2 })}</Text>
             <Text variant="heading">{t('firstRun.tour.tryTitle')}</Text>
             <Text muted>{t('firstRun.tour.tryBody')}</Text>
           </Card>
         ) : null}
-        {tourStep === 'tourWrapUp' ? (
+        {tour === 'wrapUp' ? (
           <Card>
             <Text variant="caption" muted>{t('firstRun.step', { n: 2, of: 2 })}</Text>
             <Text variant="heading">{t('firstRun.tour.wrapTitle')}</Text>

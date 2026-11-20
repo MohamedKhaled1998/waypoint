@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { FlatList, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, TextInput, View } from 'react-native';
+import { KeyboardPadded } from '../ui/KeyboardPadded';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -8,7 +9,8 @@ import { interviewResume } from '../firstrun/firstRun';
 import { firstRun } from '../firstrun/native';
 import { useFirstRun } from '../firstrun/native';
 import { StepCounter } from '../ui/StepCounter';
-import { useKeyboardHeight } from '../coach/useKeyboardHeight';
+import { AnswerChip, Bubble, ChatList, CoachText, Composer, TypingDots, UserText, type ChatListHandle } from '../ui/chat/Chat';
+import { formatDay } from '../i18n/dates';
 import { SHORT_NAME_MAX, type Heard } from '../interview/interview';
 import { useInterview } from '../interview/useInterview';
 import { Banner } from '../ui/Banner';
@@ -16,6 +18,7 @@ import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { Pill } from '../ui/Pill';
 import { Text } from '../ui/Text';
+import { settleForLine } from '../aspiration/settleFor';
 
 export default function InterviewScreen() {
   const { t } = useTranslation();
@@ -46,28 +49,32 @@ export default function InterviewScreen() {
     void firstRun.advance('drafting').then(() => router.replace('/drafting'));
   }, [interviewDone, inFirstRun, router]);
 
+  const insets = useSafeAreaInsets();
   return (
-    <View style={styles.container}>
-      <Stack.Screen
-        options={{
-          title: t('interview.title'),
-          headerBackVisible: false,
-          gestureEnabled: false,
-          headerRight: () => (
-            <Pressable accessibilityRole="button" onPress={leave} hitSlop={8}>
-              <Text variant="label" style={styles.leave}>{t('interview.saveAndLeave')}</Text>
-            </Pressable>
-          ),
-        }}
-      />
-      {inFirstRun ? <View style={styles.counter}><StepCounter step="interview" /></View> : null}
-      {!iv.started && !words ? <OwnWords onBegin={(words) => void iv.begin(words)} /> : null}
-      {iv.started && iv.step !== 'done' ? <HeardStrip heard={iv.heard} /> : null}
-      {iv.started && iv.step === 'chat' ? <Chat iv={iv} /> : null}
-      {iv.step === 'shortName' ? <ShortNameStep iv={iv} /> : null}
-      {iv.step === 'picture' ? <PictureStep iv={iv} /> : null}
-      {iv.step === 'done' ? <Done onClose={leave} /> : null}
-    </View>
+    // Reaches the bottom edge: clears the nav bar, or the keyboard when it is up.
+    <KeyboardPadded minPadding={insets.bottom} style={styles.container}>
+      <View style={styles.flex}>
+        <Stack.Screen
+          options={{
+            title: t('interview.title'),
+            headerBackVisible: false,
+            gestureEnabled: false,
+            headerRight: () => (
+              <Pressable accessibilityRole="button" onPress={leave} hitSlop={8}>
+                <Text variant="label" style={styles.leave}>{t('interview.saveAndLeave')}</Text>
+              </Pressable>
+            ),
+          }}
+        />
+        {inFirstRun ? <View style={styles.counter}><StepCounter step="interview" /></View> : null}
+        {!iv.started && !words ? <OwnWords onBegin={(words) => void iv.begin(words)} /> : null}
+        {iv.started && iv.step !== 'done' ? <HeardStrip heard={iv.heard} /> : null}
+        {iv.started && iv.step === 'chat' ? <Chat iv={iv} /> : null}
+        {iv.step === 'shortName' ? <ShortNameStep iv={iv} /> : null}
+        {iv.step === 'picture' ? <PictureStep iv={iv} /> : null}
+        {iv.step === 'done' ? <Done onClose={leave} /> : null}
+      </View>
+    </KeyboardPadded>
   );
 }
 
@@ -135,25 +142,20 @@ function HeardStrip({ heard }: { heard: Heard[] }) {
 
 function Chat({ iv }: { iv: Iv }) {
   const { t } = useTranslation();
-  const { theme } = useUnistyles();
-  const insets = useSafeAreaInsets();
-  const keyboard = useKeyboardHeight();
   const [draft, setDraft] = useState('');
-  const list = useRef<FlatList>(null);
-  useEffect(() => {
-    list.current?.scrollToEnd({ animated: true });
-  }, [iv.messages.length, iv.messages.at(-1)?.text]);
+  const list = useRef<ChatListHandle>(null);
 
   const submit = (text: string) => {
     const trimmed = text.trim();
     if (!trimmed) return;
     setDraft('');
     void iv.send(trimmed);
+    list.current?.scrollToEnd();
   };
 
   return (
-    <View style={[styles.chat, { paddingBottom: Math.max(keyboard, insets.bottom) }]}>
-      <FlatList
+    <View style={styles.chat}>
+      <ChatList
         ref={list}
         style={styles.list}
         contentContainerStyle={styles.listContent}
@@ -161,21 +163,15 @@ function Chat({ iv }: { iv: Iv }) {
         keyExtractor={(m) => m.id}
         renderItem={({ item }) => (
           <View style={styles.row}>
-            <View style={[styles.bubble, item.role === 'user' ? styles.mine : styles.coach]}>
-              <Text style={item.role === 'user' ? styles.mineText : undefined}>{item.text}</Text>
-            </View>
+            <Bubble mine={item.role === 'user'}>
+              {item.role === 'user' ? <UserText text={item.text} /> : <CoachText id={item.id} text={item.text} live={item.status === 'sending'} />}
+            </Bubble>
             {item.status === 'saved' ? (
               <Text variant="caption" muted style={styles.saved}>{t('interview.saved')}</Text>
             ) : null}
           </View>
         )}
-        ListFooterComponent={
-          iv.typing ? (
-            <View style={[styles.bubble, styles.coach]} accessibilityLabel={t('interview.typing')}>
-              <Text muted>•••</Text>
-            </View>
-          ) : undefined
-        }
+        ListFooterComponent={iv.typing ? <TypingDots label={t('interview.typing')} /> : undefined}
       />
       {iv.late ? (
         <View style={styles.pad}>
@@ -184,25 +180,25 @@ function Chat({ iv }: { iv: Iv }) {
         </View>
       ) : null}
       {iv.chips.length > 0 ? (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          style={styles.chipScroller}
+          contentContainerStyle={styles.chipRow}
+        >
           {iv.chips.map((c) => (
-            <Chip key={c} label={c} onPress={() => submit(c)} />
+            <AnswerChip key={c} label={c} onPress={() => submit(c)} />
           ))}
         </ScrollView>
       ) : null}
-      <View style={styles.inputBar}>
-        <TextInput
-          style={styles.input}
-          value={draft}
-          onChangeText={setDraft}
-          placeholder={t('interview.answerPlaceholder')}
-          placeholderTextColor={theme.colors.textMuted}
-          multiline
-        />
-        <Pressable accessibilityRole="button" accessibilityLabel={t('interview.send')} onPress={() => submit(draft)} style={styles.sendButton}>
-          <Text variant="label" style={styles.sendText}>{t('interview.send')}</Text>
-        </Pressable>
-      </View>
+      <Composer
+        value={draft}
+        onChangeText={setDraft}
+        onSend={() => submit(draft)}
+        placeholder={t('interview.answerPlaceholder')}
+        sendLabel={t('interview.send')}
+      />
     </View>
   );
 }
@@ -232,17 +228,18 @@ function ShortNameStep({ iv }: { iv: Iv }) {
 }
 
 function PictureStep({ iv }: { iv: Iv }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [failed, setFailed] = useState(false);
   const p = iv.picture;
   if (!p) return null;
-  const settle = [p.settleForDate, p.settleForPicture].filter(Boolean).join(' · ');
+  const day = (iso: string) => formatDay(iso, { locale: i18n.language, weekday: false });
+  const settle = settleForLine(t, p.settleForPicture, p.settleForDate ? day(p.settleForDate) : undefined);
   const confirm = () => {
     setFailed(false);
     iv.confirm().catch(() => setFailed(true));
   };
   const rows: [string, string | undefined][] = [
-    [t('interview.rowHopedFor'), p.hopedForDate],
+    [t('interview.rowHopedFor'), p.hopedForDate ? day(p.hopedForDate) : undefined],
     [t('interview.rowSettleFor'), settle || undefined],
     [t('interview.rowHours'), p.hoursPerWeek ? t('interview.rowHoursValue', { count: p.hoursPerWeek }) : undefined],
     [t('interview.rowSlots'), p.slots.length ? p.slots.join(', ') : undefined],
@@ -290,6 +287,7 @@ function Done({ onClose }: { onClose: () => void }) {
 
 const styles = StyleSheet.create((theme) => ({
   container: { flex: 1, backgroundColor: theme.colors.background },
+  flex: { flex: 1 },
   leave: { color: theme.colors.accent },
   counter: { paddingHorizontal: theme.space.lg },
   pad: { padding: theme.space.lg, gap: theme.space.md },
@@ -303,7 +301,8 @@ const styles = StyleSheet.create((theme) => ({
     ...theme.type.body,
   },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.space.sm },
-  chipRow: { gap: theme.space.sm, paddingHorizontal: theme.space.lg, paddingVertical: theme.space.sm },
+  chipScroller: { flexGrow: 0 },
+  chipRow: { alignItems: 'center', gap: theme.space.sm, paddingHorizontal: theme.space.lg, paddingVertical: theme.space.sm },
   chip: {
     paddingHorizontal: theme.space.md,
     paddingVertical: theme.space.sm,
@@ -332,29 +331,5 @@ const styles = StyleSheet.create((theme) => ({
   list: { flex: 1 },
   listContent: { padding: theme.space.lg, gap: theme.space.sm },
   row: { gap: theme.space.xs },
-  bubble: { maxWidth: '85%', padding: theme.space.md, borderRadius: theme.radii.md },
-  mine: { alignSelf: 'flex-end', backgroundColor: theme.colors.accent },
-  mineText: { color: theme.colors.onAccent },
-  coach: { alignSelf: 'flex-start', backgroundColor: theme.colors.surface, ...theme.shadow },
   saved: { alignSelf: 'flex-end' },
-  inputBar: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: theme.space.sm,
-    padding: theme.space.md,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.border,
-    backgroundColor: theme.colors.surface,
-  },
-  input: {
-    flex: 1,
-    paddingHorizontal: theme.space.md,
-    paddingVertical: theme.space.sm,
-    borderRadius: theme.radii.md,
-    backgroundColor: theme.colors.background,
-    color: theme.colors.text,
-    ...theme.type.body,
-  },
-  sendButton: { paddingHorizontal: theme.space.lg, paddingVertical: theme.space.md, borderRadius: theme.radii.pill, backgroundColor: theme.colors.accent },
-  sendText: { color: theme.colors.onAccent },
 }));

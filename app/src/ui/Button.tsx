@@ -2,7 +2,7 @@ import { Pressable, type PressableProps } from 'react-native';
 import { StyleSheet } from 'react-native-unistyles';
 import { Text } from './Text';
 
-type Kind = 'primary' | 'secondary' | 'quiet';
+type Kind = 'primary' | 'secondary' | 'quiet' | 'danger';
 
 export function Button({ title, kind = 'primary', ...rest }: Omit<PressableProps, 'children'> & { title: string; kind?: Kind }) {
   styles.useVariants({ kind });
@@ -27,6 +27,7 @@ const styles = StyleSheet.create((theme) => ({
         primary: { backgroundColor: theme.colors.accent },
         secondary: { backgroundColor: 'transparent', borderWidth: 1, borderColor: theme.colors.border },
         quiet: { backgroundColor: 'transparent' },
+        danger: { backgroundColor: 'transparent', borderWidth: 1, borderColor: theme.colors.danger },
       },
     },
   },
@@ -36,6 +37,7 @@ const styles = StyleSheet.create((theme) => ({
         primary: { color: theme.colors.onAccent },
         secondary: { color: theme.colors.text },
         quiet: { color: theme.colors.accent },
+        danger: { color: theme.colors.danger },
       },
     },
   },

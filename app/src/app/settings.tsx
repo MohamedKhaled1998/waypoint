@@ -15,6 +15,7 @@ import { Banner } from '../ui/Banner';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { Text } from '../ui/Text';
+import { APPEARANCES, setAppearance, useAppearance } from '../theme/appearance';
 import type { Hue } from '../theme/tokens';
 
 const FREQUENCIES = ['Quiet', 'Gentle', 'Chatty'] as const;
@@ -32,6 +33,7 @@ export default function SettingsScreen() {
   const [exporting, setExporting] = useState(false);
   const router = useRouter();
   const { settings, failed, exactAlarms, api, run, allowExactAlarms } = useSettings();
+  const appearance = useAppearance();
   const paused = usePauses(settings?.split ?? []);
   const [editing, setEditing] = useState<Editing>(null);
   const [quietOpen, setQuietOpen] = useState(false);
@@ -146,6 +148,15 @@ export default function SettingsScreen() {
       </Card>
 
       <Card style={styles.card}>
+        <Text variant="heading">{t('settings.appearance.title')}</Text>
+        <View style={styles.row}>
+          {APPEARANCES.map((a) => (
+            <Chip key={a} label={t(`settings.appearance.${a}`)} selected={appearance === a} onPress={() => setAppearance(a)} />
+          ))}
+        </View>
+      </Card>
+
+      <Card style={styles.card}>
         <Text variant="heading">{t('settings.quiet.title')}</Text>
         <Pressable accessibilityRole="button" onPress={() => setQuietOpen(true)}>
           <Text>
@@ -172,16 +183,25 @@ export default function SettingsScreen() {
 
       <Card style={styles.card}>
         <Text variant="heading">{t('settings.refresh.title')}</Text>
+        <Text variant="label" muted>{t('settings.refresh.dayLabel')}</Text>
         <View style={styles.row}>
           {REFRESH_DAYS.map((d) => (
-            <Chip key={d} label={t(`settings.dayLong.${d}`)} selected={settings.refreshDay === d} onPress={() => void run(api.setWeeklyRefresh(d, settings.refreshTime))} />
+            <Chip
+              key={d}
+              label={t(`settings.day.${d.slice(0, 3)}`)}
+              accessibilityLabel={t(`settings.dayLong.${d}`)}
+              selected={settings.refreshDay === d}
+              onPress={() => void run(api.setWeeklyRefresh(d, settings.refreshTime))}
+            />
           ))}
         </View>
+        <Text variant="label" muted>{t('settings.refresh.timeLabel')}</Text>
         <View style={styles.between}>
-          <Button kind="secondary" title={t('settings.refresh.earlier')} onPress={() => void run(api.setWeeklyRefresh(settings.refreshDay, shiftTime(settings.refreshTime, -30)))} />
-          <Text variant="label">{t('settings.refresh.value', { day: t(`settings.dayLong.${settings.refreshDay}`), time: settings.refreshTime })}</Text>
-          <Button kind="secondary" title={t('settings.refresh.later')} onPress={() => void run(api.setWeeklyRefresh(settings.refreshDay, shiftTime(settings.refreshTime, 30)))} />
+          <Button kind="secondary" title="−" accessibilityLabel={t('settings.refresh.earlier')} onPress={() => void run(api.setWeeklyRefresh(settings.refreshDay, shiftTime(settings.refreshTime, -30)))} />
+          <Text variant="title">{settings.refreshTime}</Text>
+          <Button kind="secondary" title="+" accessibilityLabel={t('settings.refresh.later')} onPress={() => void run(api.setWeeklyRefresh(settings.refreshDay, shiftTime(settings.refreshTime, 30)))} />
         </View>
+        <Text variant="caption" muted>{t('settings.refresh.value', { day: t(`settings.dayLong.${settings.refreshDay}`), time: settings.refreshTime })}</Text>
       </Card>
 
       <Card style={[styles.card, pauseEverything && styles.dashed]}>
@@ -222,7 +242,7 @@ export default function SettingsScreen() {
         <Text variant="heading">{t('settings.myData.title')}</Text>
         <Text muted>{t('settings.myData.exportNote')}</Text>
         <Button kind="secondary" title={exporting ? t('settings.myData.exporting') : t('settings.myData.export')} onPress={() => void exportData()} />
-        <Button kind="secondary" title={t('settings.myData.delete')} onPress={confirmDelete} />
+        <Button kind="danger" title={t('settings.myData.delete')} onPress={confirmDelete} />
         <Text variant="label">{t('settings.myData.privacyTitle')}</Text>
         <Text variant="caption" muted>{t('settings.myData.privacyBackups')}</Text>
         <Text variant="caption" muted>{t('settings.myData.privacyProvider')}</Text>

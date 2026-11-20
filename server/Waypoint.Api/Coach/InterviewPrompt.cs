@@ -17,6 +17,10 @@ public static class InterviewPrompt
         - Use the user's own words for their Aspiration. If an answer is vague, ask for one concrete example.
         - If the user says "I don't know", offer two or three plausible options to react to.
         - No therapy-speak, no emojis, no motivational quotes.
+        - Plain prose only. No Markdown: no asterisks or bold, no headings, no bullet or numbered lists. The app shows
+          your words exactly as written.
+        - Write to the user, in the second person, everywhere they will read it: your replies, the picture and the
+          open questions ("Which gym will you join?", "Is your wife happy with meal prepping?"). Never "the user".
 
         ## What to find out (roughly in this order; skip what you know)
         1. Success: what does "done" or "good enough" look like, concretely?
@@ -59,8 +63,10 @@ public static class InterviewPrompt
             "past_attempts": [{ "what": "", "what_worked": "", "what_derailed": "" }],
             "share_hours_per_week": 3, "constraints": [],
             "domain_picture": { "routine": "", "skill": "", "limits": [], "likes": [], "dislikes": [] },
-            "hoped_for_date": "YYYY-MM-DD", "settle_for_date": "YYYY-MM-DD", "settle_for_picture": "",
-            "on_skip": "gentle_check | quiet_replan | ask_why", "open_questions": []
+            "hoped_for_date": "YYYY-MM-DD", "settle_for_date": "YYYY-MM-DD",
+            "settle_for_picture": "what they would settle for, without the date: \"86 kg\", not \"86 kg instead of 83 kg by mid July\"; empty if only the date moves",
+            "on_skip": "gentle_check | quiet_replan | ask_why",
+            "open_questions": ["each one a short question to the user, in the second person"]
           }
         }
         """;

@@ -16,7 +16,7 @@ public static class Plans
         {
             var aspirations = await db.Aspirations.Where(a => a.Status != "closed").OrderBy(a => a.CreatedAt).ToListAsync(ct);
             var versions = await db.PlanVersions.Where(p => p.Status == PlanVersionStatus.Proposed || p.Status == PlanVersionStatus.Approved)
-                .Select(p => new { p.Id, p.AspirationId, p.Status }).ToListAsync(ct);
+                .Select(p => new { p.Id, p.AspirationId, p.Status, p.ApprovedAt }).ToListAsync(ct);
             var jobs = await db.Jobs.Where(j => j.Kind == JobKinds.Plan && j.AspirationId != null)
                 .Select(j => new { j.AspirationId, j.State, j.CreatedAt }).ToListAsync(ct);
             return Results.Ok(aspirations.Select(a => new
@@ -28,6 +28,8 @@ public static class Plans
                     && jobs.Where(j => j.AspirationId == a.Id).OrderByDescending(j => j.CreatedAt).FirstOrDefault()?.State == JobState.Failed,
                 PendingVersionId = versions.FirstOrDefault(v => v.AspirationId == a.Id && v.Status == PlanVersionStatus.Proposed)?.Id,
                 CurrentVersionId = versions.FirstOrDefault(v => v.AspirationId == a.Id && v.Status == PlanVersionStatus.Approved)?.Id,
+                // The Coach thread's proposal card says when the Plan in force was approved.
+                CurrentApprovedAt = versions.FirstOrDefault(v => v.AspirationId == a.Id && v.Status == PlanVersionStatus.Approved)?.ApprovedAt,
             }));
         });
 
