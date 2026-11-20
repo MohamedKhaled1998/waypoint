@@ -21,5 +21,7 @@ public sealed class AnthropicOptions
 {
     public string? ApiKey { get; set; }
     public string BaseUrl { get; set; } = "https://api.anthropic.com";
-    public int MaxTokens { get; set; } = 2048;
+    // Sonnet 5.5 thinks before it answers: a first Plan took ~9k thinking + ~3k text tokens.
+    // A ceiling, not a target: only the tokens used are billed.
+    public int MaxTokens { get; set; } = 32000;
 }

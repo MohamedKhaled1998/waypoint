@@ -36,6 +36,7 @@ public sealed class AnthropicCoachModelClient(HttpClient http, IOptions<Anthropi
         if (!response.IsSuccessStatusCode) throw new CoachUnavailableException($"http_{(int)response.StatusCode}");
 
         using var reader = new StreamReader(await response.Content.ReadAsStreamAsync(ct));
+        var wroteText = false;
         while (await reader.ReadLineAsync(ct) is { } line)
         {
             if (!line.StartsWith("data: ", StringComparison.Ordinal)) continue;
@@ -44,8 +45,14 @@ public sealed class AnthropicCoachModelClient(HttpClient http, IOptions<Anthropi
             switch (root.GetProperty("type").GetString())
             {
                 case "content_block_delta" when root.GetProperty("delta").TryGetProperty("text", out var text):
+                    wroteText = true;
                     yield return text.GetString() ?? "";
                     break;
+                // Thinking can use up max_tokens before any text: say so instead of looking like an empty reply.
+                case "message_delta" when !wroteText
+                    && root.GetProperty("delta").TryGetProperty("stop_reason", out var stop)
+                    && stop.GetString() == "max_tokens":
+                    throw new CoachUnavailableException("max_tokens");
                 case "error":
                     throw new CoachUnavailableException("provider_error");
             }
