@@ -47,15 +47,15 @@ export const landingTabFor = (v: Pick<PlanVersionView, 'reason'> | null): PlanTa
 /** Changes as rows: the old value is shown struck through next to the new one. What stays is listed under it. */
 export function changeRows(v: Pick<PlanVersionView, 'changes'>): {
   changes: { title: string; field: string; before: number; after: number; reason: string }[];
-  stays: { what: 'milestone' | 'habit'; title: string; detail: string }[];
+  stays: ({ what: 'milestone'; title: string; date: string } | { what: 'habit'; title: string; timesPerWeek: number; minutes: number })[];
 } {
   return {
     changes: (v.changes?.changes ?? []).map(({ title, field, before, after, reason }) => ({ title, field, before, after, reason })),
-    stays: (v.changes?.stays ?? []).map((s) => ({
-      what: s.what,
-      title: s.title,
-      detail: s.what === 'milestone' ? (s.date ?? '') : `${s.times_per_week ?? ''} · ${s.minutes ?? ''}`,
-    })),
+    stays: (v.changes?.stays ?? []).map((s) =>
+      s.what === 'milestone'
+        ? { what: 'milestone' as const, title: s.title, date: s.date ?? '' }
+        : { what: 'habit' as const, title: s.title, timesPerWeek: Number(s.times_per_week ?? 0), minutes: Number(s.minutes ?? 0) },
+    ),
   };
 }
 

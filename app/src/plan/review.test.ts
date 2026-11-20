@@ -186,8 +186,8 @@ describe('Plan review for a weekly refresh', () => {
     const rows = changeRows(refreshVersion('v2'));
     expect(rows.changes).toEqual([{ title: 'Easy run', field: 'minutes', before: 30, after: 35, reason: 'You kept up, so a small step.' }]);
     expect(rows.stays).toEqual([
-      { what: 'milestone', title: 'Run 5 km', detail: '2026-02-02' },
-      { what: 'habit', title: 'Stretch', detail: '2 · 10' },
+      { what: 'milestone', title: 'Run 5 km', date: '2026-02-02' },
+      { what: 'habit', title: 'Stretch', timesPerWeek: 2, minutes: 10 },
     ]);
     expect(changeRows(version('v1'))).toEqual({ changes: [], stays: [] });
   });
