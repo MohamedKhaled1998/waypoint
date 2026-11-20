@@ -43,6 +43,17 @@ public sealed class CheckInTests(WaypointApiFactory factory) : PlanTestBase(fact
     }
 
     [Fact]
+    public async Task A_skip_can_say_it_was_forgotten()
+    {
+        var (c, actionId) = await WithActionAsync();
+
+        Assert.Equal(HttpStatusCode.OK, (await CheckIn(c, actionId, "ci-1", "skipped", T0, reasons: ["forgot"])).StatusCode);
+
+        var action = (await c.GetFromJsonAsync<JsonElement[]>("/scheduled-actions"))!.Single(a => a.GetProperty("id").GetGuid() == actionId);
+        Assert.Equal("forgot", action.GetProperty("checkIn").GetProperty("reasons")[0].GetString());
+    }
+
+    [Fact]
     public async Task Sending_the_same_client_id_again_changes_nothing()
     {
         var (c, actionId) = await WithActionAsync();

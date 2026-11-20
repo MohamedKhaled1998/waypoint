@@ -1,8 +1,10 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useState } from 'react';
+import Animated, { FadeInDown, FadeOutDown } from 'react-native-reanimated';
 import { Pressable, ScrollView, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { StyleSheet } from 'react-native-unistyles';
+import { StyleSheet, useUnistyles } from 'react-native-unistyles';
 import { firstRun, useFirstRun } from '../../firstrun/native';
 import { tourCard } from '../../firstrun/firstRun';
 import { formatDay } from '../../i18n/dates';
@@ -20,10 +22,26 @@ import { Banner } from '../../ui/Banner';
 import { Button } from '../../ui/Button';
 import { Card } from '../../ui/Card';
 import { EmptyState } from '../../ui/Screen';
+import { Section } from '../../ui/Section';
 import { Text } from '../../ui/Text';
+
+type Summary = { pendingVersionId: string | null; currentVersionId: string | null; shortName: string };
+
+function planWaiting<T extends Summary>(plans: T[], versionId: string | null | undefined) {
+  return plans.find((p) => p.pendingVersionId === versionId);
+}
+
+function planInForce<T extends Summary>(plans: T[]) {
+  return plans.find((p) => p.currentVersionId);
+}
+
+function countPartly(actions: ScheduledActionView[]) {
+  return actions.filter((a) => a.checkIn?.state === 'partly').length;
+}
 
 export default function TodayScreen() {
   const { t, i18n } = useTranslation();
+  const { theme } = useUnistyles();
   const router = useRouter();
   const unfinished = useUnfinishedInterview();
   const { drafting, late, retryDraft, waitingVersionId } = usePlanBanners();
@@ -54,28 +72,46 @@ export default function TodayScreen() {
   const tour = tourCard(tourStep, !!today.nowCard);
   const undoAction = actionById(actions, undo?.scheduledActionId);
 
-  const pills = (
-    <View style={styles.pills}>
-      {unfinished ? <WaitingPill label={t('today.pillInterview')} onPress={() => router.push('/interview')} /> : null}
-      {waitingVersionId ? (
-        <WaitingPill label={t('today.pillPlan')} onPress={() => router.push({ pathname: '/plan-review', params: { id: waitingVersionId } })} />
-      ) : null}
-    </View>
-  );
+  const pendingPlan = planWaiting(plans, waitingVersionId);
+  const currentPlan = planInForce(plans);
+  const pills =
+    unfinished || waitingVersionId ? (
+      <View style={styles.pills}>
+        {waitingVersionId ? (
+          <WaitingPill
+            icon="sparkles-outline"
+            title={t('today.pillPlan')}
+            sub={t('today.pillPlanSub', { name: pendingPlan?.shortName ?? '' })}
+            onPress={() => router.push({ pathname: '/plan-review', params: { id: waitingVersionId } })}
+          />
+        ) : null}
+        {unfinished ? (
+          <WaitingPill icon="chatbubble-ellipses-outline" title={t('today.pillInterview')} sub={t('today.pillInterviewSub')} onPress={() => router.push('/interview')} />
+        ) : null}
+      </View>
+    ) : null;
+  const partly = countPartly(today.timeline);
+  const tomorrow = today.tomorrowFirst
+    ? t('today.nextFirst', { title: today.tomorrowFirst.title, day: formatDay(today.tomorrowFirst.date, { locale: i18n.language }), time: timeLabel(today.tomorrowFirst) })
+    : null;
+  const summary =
+    today.timeline.length > 0
+      ? t('today.summaryDated', {
+          date: formatDay(now.date, { locale: i18n.language }),
+          done: today.summary.checkedIn,
+          total: today.summary.total,
+          minutesDone: today.summary.minutesDone,
+          minutesPlanned: today.summary.minutesPlanned,
+        })
+      : formatDay(now.date, { locale: i18n.language });
 
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
         {drafting ? <Banner message={t('plan.drafting')} /> : null}
-        {late ? (
-          <View style={styles.late}>
-            <Banner message={t('plan.late')} />
-            <Button kind="secondary" title={t('plan.retry')} onPress={() => void retryDraft()} />
-          </View>
-        ) : null}
-        {unfinished || waitingVersionId ? pills : null}
+        {late ? <Banner message={t('plan.late')} action={t('plan.retry')} onPress={() => void retryDraft()} /> : null}
         {tour === 'waiting' && today.tomorrowFirst ? (
-          <Card>
+          <Card tone="accent">
             <Text variant="caption" muted>{t('firstRun.step', { n: 1, of: 2 })}</Text>
             <Text variant="heading">{t('firstRun.tour.waitTitle')}</Text>
             <Text muted>
@@ -88,45 +124,31 @@ export default function TodayScreen() {
           </Card>
         ) : null}
         {tour === 'try' ? (
-          <Card>
+          <Card tone="accent">
             <Text variant="caption" muted>{t('firstRun.step', { n: 1, of: 2 })}</Text>
             <Text variant="heading">{t('firstRun.tour.tryTitle')}</Text>
             <Text muted>{t('firstRun.tour.tryBody')}</Text>
           </Card>
         ) : null}
         {tour === 'wrapUp' ? (
-          <Card>
+          <Card tone="accent">
             <Text variant="caption" muted>{t('firstRun.step', { n: 2, of: 2 })}</Text>
             <Text variant="heading">{t('firstRun.tour.wrapTitle')}</Text>
             <Text muted>{t('firstRun.tour.wrapBody')}</Text>
-            <Button title={t('firstRun.tour.done')} onPress={() => void firstRun.finishTour()} />
+            <Button title={t('firstRun.tour.done')} onPress={() => void firstRun.finishTour()} style={styles.start} />
           </Card>
         ) : null}
 
-        {batteryHelp ? (
-          <View style={styles.late}>
-            <Banner message={t('battery.banner')} />
-            <Button kind="secondary" title={t('battery.open')} onPress={() => void openBatterySettings()} />
-          </View>
-        ) : null}
+        {batteryHelp ? <Banner message={t('battery.banner')} action={t('battery.open')} onPress={() => void openBatterySettings()} /> : null}
 
-        {pausedLine?.kind === 'everything' ? (
-          <Card style={styles.dashed}>
-            <Text variant="heading">
-              {t(pausedLine.byCoach ? 'pause.byCoach' : pausedLine.until ? 'pause.everythingUntil' : 'pause.everythingOpen', { date: pausedLine.until ?? '' })}
-            </Text>
-            <Button title={t('pause.resumeNow')} onPress={() => void paused.resume(pausedLine.pauseId)} />
-          </Card>
-        ) : null}
-        {pausedLine?.kind === 'aspirations' ? <Text muted>{t('pause.aspirationsLine', { names: pausedLine.names.join(', ') })}</Text> : null}
-
-        {today.state === 'none' ? (
+        {today.state === 'none' && !(pausedLine?.kind === 'everything') ? (
           <>
+            {pills}
             {!unfinished && plans.length === 0 ? (
               <Card>
                 <Text variant="heading">{t('interview.startTitle')}</Text>
                 <Text muted>{t('interview.startBody')}</Text>
-                <Button title={t('today.interviewCta')} onPress={() => router.push('/interview')} />
+                <Button title={t('today.interviewCta')} onPress={() => router.push('/interview')} style={styles.start} />
               </Card>
             ) : null}
             {loaded ? <EmptyState title={t('today.emptyTitle')} body={t('today.emptyBody')} /> : null}
@@ -134,23 +156,17 @@ export default function TodayScreen() {
         ) : (
           <>
             <View style={styles.header}>
-              <Text variant="title">{greeting}</Text>
-              {today.state !== 'rest' ? (
-                <Text muted>
-                  {t('today.summary', {
-                    done: today.summary.checkedIn,
-                    total: today.summary.total,
-                    minutesDone: today.summary.minutesDone,
-                    minutesPlanned: today.summary.minutesPlanned,
-                  })}
-                </Text>
-              ) : null}
-              <AspirationChips aspirations={plans} onOpen={(a) => router.push({ pathname: '/aspiration/[id]', params: { id: a.aspirationId } })} />
+              <View style={styles.headLines}>
+                <Text variant="title">{greeting}</Text>
+                <Text variant="label" muted style={styles.regular}>{summary}</Text>
+              </View>
+              <AspirationChips aspirations={plans} actions={today.timeline} onOpen={(a) => router.push({ pathname: '/aspiration/[id]', params: { id: a.aspirationId } })} />
             </View>
 
             {today.nowCard ? (
               <NowCard
                 now={today.nowCard}
+                aspirations={plans}
                 onOpen={(action) => setSheet({ action })}
                 onQuick={(action, state) => {
                   void task.quick(action, state);
@@ -160,51 +176,92 @@ export default function TodayScreen() {
               />
             ) : null}
 
-            {today.state === 'allCheckedIn' ? (
-              <Card>
-                <Text variant="heading">{t('today.allCheckedInTitle')}</Text>
-                {today.tomorrowFirst ? (
-                  <Text muted>{t('today.tomorrowFirst', { title: today.tomorrowFirst.title, time: today.tomorrowFirst.slotStart })}</Text>
-                ) : null}
-              </Card>
-            ) : null}
+            {pills}
 
-            {today.state === 'rest' ? (
+            {pausedLine?.kind === 'everything' ? (
               <Card>
-                <Text variant="heading">{t('today.restTitle')}</Text>
-                <Text muted>{t('today.restBody')}</Text>
-              </Card>
-            ) : null}
-
-            <View style={styles.timeline}>
-              {today.timeline.map((action, i) => (
-                <View key={action.id} style={styles.timeline}>
-                  {i === today.nowLineBefore ? <NowLine /> : null}
-                  <TimelineRow action={action} aspirations={plans} isNow={action.id === nowId} onOpen={(a) => setSheet({ action: a })} />
+                <Ionicons name="pause-circle-outline" size={28} color={theme.colors.accent} />
+                <Text variant="title">
+                  {t(pausedLine.byCoach ? 'pause.byCoach' : pausedLine.until ? 'pause.everythingUntil' : 'pause.everythingOpen', { date: pausedLine.until ? formatDay(pausedLine.until, { locale: i18n.language }) : '' })}
+                </Text>
+                <Text variant="label" muted style={styles.regular}>{t('today.pausedBody')}</Text>
+                <View style={styles.buttons}>
+                  <Button title={t('pause.resumeNow')} onPress={() => void paused.resume(pausedLine.pauseId)} />
+                  <Button kind="quiet" title={t('today.changeDate')} onPress={() => router.push('/settings')} />
                 </View>
-              ))}
-              {today.nowLineBefore >= today.timeline.length && today.timeline.length > 0 ? <NowLine /> : null}
-            </View>
-            {today.plannedUntil && today.plannedUntil <= now.date ? <Text muted>{t('today.pastCache', { date: today.plannedUntil })}</Text> : null}
+              </Card>
+            ) : null}
+
+            {today.state === 'allCheckedIn' ? (
+              <Card tone="accent">
+                <Text style={styles.bold}>{t('today.allCheckedInTitle')}</Text>
+                <Text variant="label" style={styles.regular}>
+                  {[partly ? t('today.partlyCounts', { count: partly }) : null, tomorrow].filter(Boolean).join(' ')}
+                </Text>
+              </Card>
+            ) : null}
+
+            {today.state === 'rest' && pausedLine?.kind !== 'everything' ? (
+              <Card style={styles.rest}>
+                <Text variant="title">{t('today.restTitle')}</Text>
+                <Text variant="label" muted style={styles.regular}>{[t('today.restBody'), tomorrow].filter(Boolean).join(' ')}</Text>
+                <View style={styles.buttons}>
+                  {currentPlan?.currentVersionId ? (
+                    <Button kind="secondary" title={t('today.seeWeek')}
+                      onPress={() => router.push({ pathname: '/plan-review', params: { id: currentPlan.currentVersionId!, tab: 'twoWeeks' } })} />
+                  ) : null}
+                  <Button kind="quiet" title={t('today.messageCoach')} onPress={() => router.navigate('/coach')} />
+                </View>
+              </Card>
+            ) : null}
+
+            {today.timeline.length > 0 ? (
+              <Section title={t('today.timelineTitle')}>
+                <View style={styles.timeline}>
+                  {today.timeline.map((action, i) => (
+                    <View key={action.id} style={styles.timeline}>
+                      {i === today.nowLineBefore ? <NowLine time={now.time} /> : null}
+                      <TimelineRow
+                        action={action}
+                        aspirations={plans}
+                        isNow={action.id === nowId}
+                        overdue={!action.checkIn && !!action.slotEnd && action.slotEnd < now.time}
+                        onOpen={(a) => setSheet({ action: a })}
+                        onQuick={(a, state) => void task.quick(a, state)}
+                      />
+                    </View>
+                  ))}
+                  {today.nowLineBefore >= today.timeline.length ? <NowLine time={now.time} /> : null}
+                </View>
+              </Section>
+            ) : null}
+
+            {pausedLine?.kind === 'aspirations' ? (
+              <View style={styles.pausedNote}>
+                <Ionicons name="pause-circle-outline" size={16} color={theme.colors.textMuted} />
+                <Text variant="label" muted style={[styles.flex, styles.regular]}>{t('today.pausedNote', { names: pausedLine.names.join(', ') })}</Text>
+              </View>
+            ) : null}
+            {today.plannedUntil && today.plannedUntil <= now.date ? <Text muted>{t('today.pastCache', { date: formatDay(today.plannedUntil, { locale: i18n.language }) })}</Text> : null}
           </>
         )}
       </ScrollView>
 
       {failed ? (
-        <View style={styles.undo}>
-          <Text style={styles.undoText}>{t('today.sheet.failed')}</Text>
-        </View>
+        <Animated.View entering={FadeInDown} exiting={FadeOutDown} style={styles.undo}>
+          <Text variant="label" style={styles.undoText}>{t('today.sheet.failed')}</Text>
+        </Animated.View>
       ) : null}
 
       {undo && undoAction ? (
-        <View style={styles.undo}>
-          <Text style={styles.undoText}>{t('today.undone', { state: t(`today.state.${undo.state}`), title: undoAction.title })}</Text>
-          <Pressable accessibilityRole="button" onPress={() => void task.undo()}>
-            <Text variant="label" style={styles.undoText}>
-              {t('today.undo')}
-            </Text>
+        <Animated.View entering={FadeInDown} exiting={FadeOutDown} style={styles.undo}>
+          <Text variant="label" style={[styles.undoText, styles.flex]} numberOfLines={1}>
+            {t('today.undone', { state: t(`today.state.${undo.state}`), title: undoAction.title })}
+          </Text>
+          <Pressable accessibilityRole="button" hitSlop={8} onPress={() => void task.undo()}>
+            <Text variant="label" style={styles.undoAction}>{t('today.undo')}</Text>
           </Pressable>
-        </View>
+        </Animated.View>
       ) : null}
 
       <ActionSheet
@@ -217,6 +274,7 @@ export default function TodayScreen() {
         now={now}
         onMove={(date, slotId) => move(sheet!.action.id, date, slotId)}
         onPause={async (scope, until) => void (await paused.start(scope, until))}
+        aspirations={plans}
       />
     </View>
   );
@@ -224,23 +282,32 @@ export default function TodayScreen() {
 
 const styles = StyleSheet.create((theme) => ({
   container: { flex: 1, backgroundColor: theme.colors.background },
-  content: { padding: theme.space.lg, gap: theme.space.lg, flexGrow: 1 },
-  late: { gap: theme.space.sm },
-  header: { gap: theme.space.sm },
+  // Room at the end, so the Undo toast never covers the last row.
+  content: { padding: theme.space.lg, paddingBottom: 120, gap: theme.space.lg, flexGrow: 1 },
+  header: { gap: 10 },
+  headLines: { gap: 2 },
+  regular: { fontWeight: '400' },
+  bold: { fontWeight: '700' },
+  flex: { flex: 1 },
+  start: { alignSelf: 'flex-start' },
   pills: { flexDirection: 'row', gap: theme.space.sm },
-  dashed: { borderStyle: 'dashed', gap: theme.space.md },
+  buttons: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.space.sm },
+  rest: { gap: 10, padding: 18 },
   timeline: { gap: theme.space.sm },
+  pausedNote: { flexDirection: 'row', alignItems: 'center', gap: theme.space.sm },
   undo: {
     position: 'absolute',
     start: theme.space.lg,
     end: theme.space.lg,
     bottom: theme.space.lg,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: theme.space.lg,
+    gap: 10,
+    padding: theme.space.md,
+    paddingStart: theme.space.lg,
     borderRadius: theme.radii.md,
     backgroundColor: theme.colors.text,
   },
-  undoText: { color: theme.colors.background },
+  undoText: { color: theme.colors.background, fontWeight: '400' },
+  undoAction: { color: theme.colors.accentTint, fontWeight: '700' },
 }));

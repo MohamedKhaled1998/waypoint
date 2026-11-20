@@ -1,4 +1,4 @@
-import { createActionSheet, partlyChips } from './sheet';
+import { createActionSheet, partlyChips, SKIP_CHIPS, STOPPED_SHORT_CHIPS } from './sheet';
 
 const tapped = '2026-01-07T07:30:00.000Z';
 
@@ -23,6 +23,8 @@ describe('Action sheet', () => {
   it('Partly needs minutes: 5-minute chips below the planned time, or Other', () => {
     expect(partlyChips(30)).toEqual([5, 10, 15, 20, 25]);
     expect(partlyChips(5)).toEqual([5]);
+    // Never more than five: spread across the planned time.
+    expect(partlyChips(75)).toEqual([15, 30, 40, 45, 60]);
     const sheet = createActionSheet({ scheduledActionId: 'a', minutes: 30 });
     sheet.choose('partly');
     expect(sheet.state().followUp).toBe('stoppedShort');
@@ -61,5 +63,13 @@ describe('Action sheet', () => {
   it('Not today is a Pause: this Action, everything for the rest of today, or a few days', () => {
     const sheet = createActionSheet({ scheduledActionId: 'a', minutes: 30 });
     expect(sheet.notTodayScopes).toEqual(['thisAction', 'everythingToday', 'fewDays']);
+  });
+});
+
+describe('follow-up chips', () => {
+  it('Partly and Skip both end in Something else, and Skip offers Forgot', () => {
+    expect(STOPPED_SHORT_CHIPS.at(-1)).toBe('something_else');
+    expect(SKIP_CHIPS).toContain('forgot');
+    expect(SKIP_CHIPS.at(-1)).toBe('something_else');
   });
 });

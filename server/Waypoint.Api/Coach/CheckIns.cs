@@ -42,7 +42,7 @@ public static class CheckIns
     /// <summary>The chip codes the app offers; free text belongs in the note.</summary>
     public static readonly HashSet<string> ReasonCodes = new()
     {
-        "great", "ok", "hard", "tired", "no_time", "interrupted", "unwell", "hurt", "not_feeling_it", "something_else", "not_today",
+        "great", "ok", "hard", "tired", "no_time", "interrupted", "unwell", "hurt", "not_feeling_it", "something_else", "not_today", "forgot",
     };
     public const int MaxReasons = 6;
     public const int MaxNote = 1000;

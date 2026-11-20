@@ -3,16 +3,17 @@ import type { CheckInRequest, CheckInState } from './today';
 export type FollowUp = 'feeling' | 'stoppedShort' | 'skipReason';
 
 export const FEELING_CHIPS = ['great', 'ok', 'hard'] as const;
-export const STOPPED_SHORT_CHIPS = ['tired', 'no_time', 'interrupted', 'unwell', 'hurt'] as const;
-export const SKIP_CHIPS = ['no_time', 'tired', 'not_feeling_it', 'unwell', 'hurt', 'something_else'] as const;
+export const STOPPED_SHORT_CHIPS = ['no_time', 'tired', 'interrupted', 'unwell', 'hurt', 'something_else'] as const;
+export const SKIP_CHIPS = ['no_time', 'tired', 'not_feeling_it', 'unwell', 'hurt', 'forgot', 'something_else'] as const;
 /** Reasons after which the Coach says it will ask and ease the next days. */
 const CARE_REASONS = ['hurt', 'unwell'];
 
-/** 5-minute chips up to, but not including, the planned time. */
+/** 5-minute chips below the planned time; never more than five, spread across it when there would be more. */
 export function partlyChips(plannedMinutes: number): number[] {
   const chips: number[] = [];
   for (let m = 5; m < plannedMinutes || chips.length === 0; m += 5) chips.push(m);
-  return chips;
+  if (chips.length <= 5) return chips;
+  return [0.2, 0.4, 0.5, 0.6, 0.8].map((f) => Math.round((plannedMinutes * f) / 5) * 5);
 }
 
 export type SheetState = {
