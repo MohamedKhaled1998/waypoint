@@ -18,8 +18,13 @@ describe('filtering the thread by Aspiration', () => {
     expect(filterThread(thread, null)).toHaveLength(4);
   });
 
-  it('shows one Aspiration’s messages only', () => {
-    expect(filterThread(thread, 'a1').map((m) => m.aspirationId)).toEqual(['a1', 'a1']);
+  it('shows one Aspiration’s messages, and keeps the user’s own words so the conversation reads', () => {
+    expect(filterThread(thread, 'a1').map((m) => [m.role, m.aspirationId])).toEqual([['coach', 'a1'], ['user', undefined], ['coach', 'a1']]);
+  });
+
+  it('drops another Aspiration’s Check-in echo', () => {
+    const echo = msg({ role: 'user', card: 'check_in', aspirationId: 'a2' });
+    expect(filterThread([echo], 'a1')).toEqual([]);
   });
 });
 

@@ -8,9 +8,10 @@ const CHIP_MAX = 15;
 
 const asHue = (hue: string): Hue | undefined => (hue === 'coral' || hue === 'teal' || hue === 'amber' ? hue : undefined);
 
-/** The thread, or one Aspiration's part of it. */
+/** The thread, or one Aspiration's part of it. The user's own messages stay, so what the Coach answers still shows. */
 export function filterThread(messages: ChatMessage[], aspirationId: string | null): ChatMessage[] {
-  return aspirationId === null ? messages : messages.filter((m) => m.aspirationId === aspirationId);
+  if (aspirationId === null) return messages;
+  return messages.filter((m) => m.aspirationId === aspirationId || (m.role === 'user' && !m.card && (!m.aspirationId || m.aspirationId === aspirationId)));
 }
 
 /** The tag a message carries: the Aspiration's short name and hue. */
