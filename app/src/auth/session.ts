@@ -62,6 +62,14 @@ export function createSession(storage: SecureStorage, api: ApiAuth, wipe: () => 
       return renewing;
     },
 
+    /** Runs the server's delete; only when it succeeded are the tokens and the phone's cache dropped. A failure leaves everything as it was. */
+    async deleteAccount(deleteOnServer: () => Promise<void>) {
+      await deleteOnServer();
+      accessToken = null;
+      await storage.remove(REFRESH_KEY);
+      await wipe();
+    },
+
     async signOut() {
       const stored = await storage.get(REFRESH_KEY);
       accessToken = null;

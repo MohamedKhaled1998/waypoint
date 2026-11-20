@@ -59,4 +59,18 @@ export function httpSettingsApi(auth: Auth) {
     reportExactAlarms: (allowed: boolean) => call('/settings/exact-alarms', 'PUT', { allowed }),
   };
 }
+/** My data: the export zip (as bytes) and the account delete, with the same renew-once-on-401. */
+export function httpMyDataApi(auth: Auth) {
+  async function call(path: string, method: string) {
+    const go = () => fetch(`${baseUrl}${path}`, { method, headers: { Authorization: `Bearer ${auth.getAccessToken() ?? ''}` } });
+    let res = await go();
+    if (res.status === 401 && (await auth.renewAccess())) res = await go();
+    if (!res.ok) throw new Error(`My data API ${res.status}`);
+    return res;
+  }
+  return {
+    exportZip: async () => new Uint8Array(await (await call('/me/export', 'GET')).arrayBuffer()),
+    deleteAccount: async () => void (await call('/me', 'DELETE')),
+  };
+}
 export type SettingsApi = ReturnType<typeof httpSettingsApi>;

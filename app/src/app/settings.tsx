@@ -1,12 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Pressable, ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { firstRun } from '../firstrun/native';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet } from 'react-native-unistyles';
 import { useSession } from '../auth/SessionProvider';
 import { usePauses } from '../pause/usePauses';
-import type { SlotRow } from '../settings/api';
+import { httpMyDataApi, type SlotRow } from '../settings/api';
+import { shareExport } from '../settings/shareExport';
 import { Chip, QuietSheet, SlotSheet, type SlotDraft } from '../settings/SettingsSheets';
 import { quietHours, quietToTrack, slotHours, slotWindow, splitSegments, stepBudget, timeLabel, minutesOf } from '../settings/tracks';
 import { useSettings } from '../settings/useSettings';
@@ -25,13 +26,37 @@ type Editing = { slot: SlotRow | null } | null;
 
 export default function SettingsScreen() {
   const { t } = useTranslation();
-  const { signOut } = useSession();
+  const session = useSession();
+  const { signOut } = session;
+  const myData = useMemo(() => httpMyDataApi(session), [session]);
+  const [exporting, setExporting] = useState(false);
   const router = useRouter();
   const { settings, failed, exactAlarms, api, run, allowExactAlarms } = useSettings();
   const paused = usePauses(settings?.split ?? []);
   const [editing, setEditing] = useState<Editing>(null);
   const [quietOpen, setQuietOpen] = useState(false);
   const [fewDays, setFewDays] = useState(false);
+
+  const exportData = async () => {
+    setExporting(true);
+    try {
+      await shareExport(await myData.exportZip());
+    } catch {
+      Alert.alert(t('settings.myData.exportFailed'));
+    } finally {
+      setExporting(false);
+    }
+  };
+  const confirmDelete = () =>
+    Alert.alert(t('settings.myData.deleteTitle'), t('settings.myData.deleteBody'), [
+      { text: t('settings.myData.exportFirst'), onPress: () => void exportData() },
+      {
+        text: t('settings.myData.deleteConfirm'),
+        style: 'destructive',
+        onPress: () => void session.deleteAccount(myData.deleteAccount).catch(() => Alert.alert(t('settings.myData.deleteFailed'))),
+      },
+      { text: t('settings.myData.cancel'), style: 'cancel' },
+    ]);
 
   // The Time budget steps locally and is sent once the user stops tapping, so the Coach proposes one Re-plan, not one per tap.
   const [budget, setBudget] = useState<number | null>(null);
@@ -191,6 +216,16 @@ export default function SettingsScreen() {
           title={t('settings.replayTour')}
           onPress={() => void firstRun.replayTour().then(() => router.navigate('/'))}
         />
+      </Card>
+
+      <Card style={styles.card}>
+        <Text variant="heading">{t('settings.myData.title')}</Text>
+        <Text muted>{t('settings.myData.exportNote')}</Text>
+        <Button kind="secondary" title={exporting ? t('settings.myData.exporting') : t('settings.myData.export')} onPress={() => void exportData()} />
+        <Button kind="secondary" title={t('settings.myData.delete')} onPress={confirmDelete} />
+        <Text variant="label">{t('settings.myData.privacyTitle')}</Text>
+        <Text variant="caption" muted>{t('settings.myData.privacyBackups')}</Text>
+        <Text variant="caption" muted>{t('settings.myData.privacyProvider')}</Text>
       </Card>
 
       <Card style={styles.card}>

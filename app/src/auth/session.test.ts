@@ -164,4 +164,31 @@ describe('session', () => {
     await session.signOut();
     expect(await session.hasStoredSession()).toBe(false);
   });
+
+  it('deleting the account wipes the tokens and the phone once the server has deleted it, without a sign-out call', async () => {
+    const api = fakeApi();
+    const storage = new MemoryStorage();
+    let wiped = 0;
+    const session = createSession(storage, api, async () => void wiped++);
+    await session.signIn('good');
+    await session.deleteAccount(async () => {});
+    expect(wiped).toBe(1);
+    expect(session.getAccessToken()).toBeNull();
+    expect(await session.hasStoredSession()).toBe(false);
+    expect(api.revoked).toEqual([]);
+  });
+
+  it('keeps the session and the cache when the server could not delete the account', async () => {
+    const storage = new MemoryStorage();
+    let wiped = 0;
+    const session = createSession(storage, fakeApi(), async () => void wiped++);
+    await session.signIn('good');
+    await expect(
+      session.deleteAccount(async () => {
+        throw new Error('offline');
+      }),
+    ).rejects.toThrow('offline');
+    expect(wiped).toBe(0);
+    expect(await session.hasStoredSession()).toBe(true);
+  });
 });

@@ -17,6 +17,8 @@ type Value = {
   renewAccess: () => Promise<boolean>;
   signIn: () => Promise<SignInResult>;
   signOut: () => Promise<void>;
+  /** Deletes the account on the server, then drops the tokens and the cache. Throws, changing nothing, when the server couldn't. */
+  deleteAccount: (deleteOnServer: () => Promise<void>) => Promise<void>;
   /** The cache, outbox and pull; the same one for every screen. */
   phone: PhoneSync;
 };
@@ -65,6 +67,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         } catch {
           return 'failed';
         }
+      },
+      async deleteAccount(deleteOnServer) {
+        await session.deleteAccount(deleteOnServer);
+        await firstRun.reset();
+        await clearGoogleAccount();
+        setStatus('signedOut');
       },
       async signOut() {
         await forgetPushToken({ getAccessToken: session.getAccessToken, renewAccess: () => session.renew().catch(() => false) });

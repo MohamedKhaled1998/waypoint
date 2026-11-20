@@ -135,6 +135,7 @@ app.MapSync();
 app.MapPushes();
 app.MapPauses();
 app.MapSettings();
+app.MapMyData();
 
 app.Run();
 
