@@ -130,7 +130,7 @@ export function QuietSheet({ start, end, onSave, onClose }: { start: string; end
 }
 
 const styles = StyleSheet.create((theme, rt) => ({
-  scrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
+  scrim: { flex: 1, backgroundColor: theme.colors.scrim },
   sheet: {
     backgroundColor: theme.colors.surface,
     borderTopStartRadius: theme.radii.lg,

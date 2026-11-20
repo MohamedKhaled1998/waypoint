@@ -440,7 +440,7 @@ export const en = {
     retry: 'Try again',
   },
   plan: {
-    title: 'Your Plan',
+    title: 'Plan review',
     whatChanged: 'What changed and why',
     tabs: { route: 'Route', twoWeeks: 'Two weeks', habits: 'Habits', assumes: 'Assumes', changes: 'Changes', milestones: 'Milestones' },
     changes: {

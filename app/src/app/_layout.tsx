@@ -106,6 +106,8 @@ function Routes() {
         headerStyle: { backgroundColor: theme.colors.background },
         headerTintColor: theme.colors.text,
         headerShadowVisible: false,
+        headerTitleStyle: { fontWeight: theme.type.heading.fontWeight, fontSize: theme.type.heading.fontSize },
+        headerTitleAlign: 'left',
         contentStyle: { backgroundColor: theme.colors.background },
       }}
     >
@@ -113,8 +115,8 @@ function Routes() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="aspiration" options={{ headerShown: false, gestureEnabled: false }} />
         <Stack.Screen name="drafting" options={{ headerShown: false, gestureEnabled: false }} />
-        <Stack.Screen name="interview" options={{ title: t('interview.title') }} />
-        <Stack.Screen name="plan-review" options={{ title: t('plan.title') }} />
+        <Stack.Screen name="interview" options={{ title: t('interview.title'), presentation: 'fullScreenModal' }} />
+        <Stack.Screen name="plan-review" options={{ title: t('plan.title'), presentation: 'fullScreenModal' }} />
         <Stack.Screen name="aspiration/[id]" options={{ title: t('progress.aspiration') }} />
         <Stack.Screen name="settings" options={{ title: t('settings.title') }} />
       </Stack.Protected>

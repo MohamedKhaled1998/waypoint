@@ -1,11 +1,14 @@
 import { View } from 'react-native';
-import { StyleSheet } from 'react-native-unistyles';
+import { StyleSheet, useUnistyles } from 'react-native-unistyles';
 import { Text } from './Text';
 
-export function Pill({ label }: { label: string }) {
+/** A small outlined label in a state colour (muted by default). */
+export function Pill({ label, color }: { label: string; color?: string }) {
+  const { theme } = useUnistyles();
+  const fg = color ?? theme.colors.textMuted;
   return (
-    <View style={styles.pill}>
-      <Text variant="caption">{label}</Text>
+    <View style={[styles.pill, { borderColor: fg }]}>
+      <Text variant="caption" style={{ color: fg }}>{label}</Text>
     </View>
   );
 }
@@ -13,11 +16,9 @@ export function Pill({ label }: { label: string }) {
 const styles = StyleSheet.create((theme) => ({
   pill: {
     alignSelf: 'flex-start',
-    paddingHorizontal: theme.space.md,
-    paddingVertical: theme.space.xs,
+    paddingHorizontal: theme.space.sm,
+    paddingVertical: 2,
     borderRadius: theme.radii.pill,
     borderWidth: 1,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.accentTint,
   },
 }));
