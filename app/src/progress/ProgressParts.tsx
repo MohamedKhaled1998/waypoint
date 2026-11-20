@@ -8,6 +8,8 @@ import { Pressable } from 'react-native';
 import { hoursLabel, projectionLine, type MilestoneRow, type Projection, type ProgressState, type SettleChoice, type SettleOption, type WeekCard } from './progress';
 import { useState } from 'react';
 import { Card } from '../ui/Card';
+import { ListRow } from '../ui/ListRow';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { lowerFirst, upperFirst } from '../i18n/text';
 
 /** The colour of a Projection state: muted, done, warn or accent. */
@@ -110,54 +112,108 @@ export function WeekCardView({ thisWeek, lastWeek }: { thisWeek: WeekCard; lastW
   );
 }
 
-/** The calm Settle-for card: unfolds the three options, each opening the Coach with that choice in context. */
+/** The calm Settle-for card: one line, then three options as rows, each opening the Coach with that choice in context. */
 export function SettleCard({ choice, onPick }: { choice: SettleChoice; onPick: (option: SettleOption) => void }) {
   const { t } = useTranslation();
+  const { theme } = useUnistyles();
   const [open, setOpen] = useState(false);
   return (
     <Card style={styles.settle}>
       <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={() => setOpen(!open)} style={styles.settleHead}>
-        <Text variant="label">{t('progress.settleChoice.title')}</Text>
-        <Text muted variant="caption">
-          {t('progress.settleChoice.body')}
-        </Text>
+        <Ionicons name="calendar-outline" size={18} color={theme.colors.accent} />
+        <View style={styles.flexGap}>
+          <Text variant="label">{t('progress.settleChoice.title')}</Text>
+          <Text variant="label" muted style={styles.regular}>{t('progress.settleChoice.body')}</Text>
+        </View>
+        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color={theme.colors.textMuted} />
       </Pressable>
-      {open
-        ? choice.options.map((option) => (
-            <Pressable key={option} accessibilityRole="button" onPress={() => onPick(option)} style={styles.settleOption}>
-              <Text variant="label">{t(`progress.settleChoice.options.${option}`)}</Text>
-            </Pressable>
-          ))
-        : null}
+      {open ? (
+        <>
+          {choice.options.map((option, i) => (
+            <ListRow
+              key={option}
+              title={t(`progress.settleChoice.options.${option}`)}
+              subtitle={t(`progress.settleChoice.sub.${option}`)}
+              onPress={() => onPick(option)}
+              last={i === choice.options.length - 1}
+            />
+          ))}
+          <Text variant="caption" muted>{t('progress.settleChoice.footer')}</Text>
+        </>
+      ) : null}
     </Card>
   );
 }
 
-/** One Milestone on the Route: tick, "You are here", Projection, state pill, planned date and "reached when" line. */
-export function RouteStep({ milestone, hue, date }: { milestone: MilestoneRow; hue: Hue; date: string }) {
+/**
+ * One Milestone on the Route: a node on a connecting line (a tick once reached), its title with the state pill at
+ * the end (the next one only), the planned date with its "reached when" line, and the Projection for the next one.
+ */
+export function RouteStep({ milestone, hue, date, last }: { milestone: MilestoneRow; hue: Hue; date: string; last: boolean }) {
   const { t } = useTranslation();
+  const { theme } = useUnistyles();
   const reached = milestone.state === 'reached';
+  const solid = theme.colors.hues[hue].solid;
   return (
     <View style={styles.routeStep}>
-      <View style={[styles.dot, reached ? styles.hueFill(hue) : null]}>{reached ? <Text variant="caption">✓</Text> : null}</View>
+      <View style={styles.rail}>
+        <View style={[styles.node, { borderColor: solid }, reached && { backgroundColor: solid }]}>
+          {reached ? <Ionicons name="checkmark" size={10} color={theme.colors.onAccent} /> : null}
+        </View>
+        {!last ? <View style={styles.connector} /> : null}
+      </View>
       <View style={styles.routeBody}>
-        {milestone.youAreHere ? <Text variant="caption">{t('progress.youAreHere')}</Text> : null}
-        <Text variant="label">{milestone.title}</Text>
-        <Text muted variant="caption">
-          {t('progress.plannedFor', { date })}
-        </Text>
-        <Text muted variant="caption">
-          {t('progress.reachedWhen', { line: lowerFirst(milestone.reachedWhen) })}
+        <View style={styles.titleRow}>
+          <Text style={[styles.flexText, styles.semibold]}>{milestone.title}</Text>
+          {milestone.youAreHere && milestone.pill ? <StatePill state={milestone.pill} /> : null}
+        </View>
+        <Text variant="label" muted style={styles.regular}>
+          {t('progress.plannedReached', { date, line: lowerFirst(milestone.reachedWhen) })}
         </Text>
         {/* Only the next Milestone says where it stands; the rest would repeat it. */}
         {milestone.youAreHere ? <ProjectionText projection={milestone.projection} /> : null}
-        {milestone.youAreHere && milestone.pill ? <StatePill state={milestone.pill} /> : null}
       </View>
     </View>
   );
 }
 
+/** "You are here · 18 Nov": where today sits on the Route, before the next Milestone. */
+export function YouAreHere({ date, hue }: { date: string; hue: Hue }) {
+  const { t } = useTranslation();
+  const { theme } = useUnistyles();
+  return (
+    <View style={styles.routeStep}>
+      <View style={styles.rail}>
+        <View style={[styles.here, { backgroundColor: theme.colors.hues[hue].solid }]} />
+        <View style={styles.connector} />
+      </View>
+      <Text variant="caption" style={[styles.routeBody, { color: theme.colors.hues[hue].solid }]}>{t('progress.youAreHereOn', { date })}</Text>
+    </View>
+  );
+}
+
+/** The Route's end: the Hoped-for date, flagged. */
+export function RouteEnd({ label }: { label: string }) {
+  const { theme } = useUnistyles();
+  return (
+    <View style={styles.routeStep}>
+      <View style={styles.rail}>
+        <Ionicons name="flag" size={16} color={theme.colors.accent} />
+      </View>
+      <Text variant="label" style={styles.accentText}>{label}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create((theme) => ({
+  flexGap: { flex: 1, gap: 2 },
+  flexText: { flex: 1 },
+  semibold: { fontWeight: '600' },
+  rail: { alignItems: 'center', width: 18 },
+  node: { width: 16, height: 16, borderRadius: 8, borderWidth: 2, marginTop: 2, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.background },
+  here: { width: 10, height: 10, borderRadius: 5, marginTop: 4 },
+  connector: { width: 2, flex: 1, minHeight: 12, backgroundColor: theme.colors.border },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: theme.space.sm },
   regular: { fontWeight: '400' },
   accentText: { color: theme.colors.accent, fontWeight: '700' },
   mutedText: { color: theme.colors.textMuted, fontWeight: '700' },
@@ -188,7 +244,7 @@ const styles = StyleSheet.create((theme) => ({
   track: { height: 6, borderRadius: 3, backgroundColor: theme.colors.surfaceAlt, overflow: 'hidden' },
   fill: { height: 6, borderRadius: 3 },
   settle: { gap: theme.space.sm },
-  settleHead: { gap: theme.space.xs },
+  settleHead: { flexDirection: 'row', alignItems: 'center', gap: theme.space.sm },
   settleOption: { padding: theme.space.md, borderRadius: theme.radii.md, borderWidth: 1, borderColor: theme.colors.border },
   routeStep: { flexDirection: 'row', gap: theme.space.md },
   dot: {
@@ -200,5 +256,5 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  routeBody: { flex: 1, gap: theme.space.xs, paddingBottom: theme.space.lg },
+  routeBody: { flex: 1, gap: 2, paddingBottom: theme.space.lg },
 }));
