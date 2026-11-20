@@ -2,6 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { Pressable, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet, useUnistyles } from 'react-native-unistyles';
+import { TourTarget } from '../firstrun/Tour';
 import { Card } from '../ui/Card';
 import { Pill } from '../ui/Pill';
 import { Text } from '../ui/Text';
@@ -55,11 +56,11 @@ export function NowCard({
         </Text>
         <Text style={styles.bold} numberOfLines={1}>{a.title}</Text>
       </View>
-      <View style={styles.quicks}>
+      <TourTarget style={styles.quicks}>
         <QuickButton icon="play-skip-forward" color={theme.colors.skipped} label={t('today.state.skip')} onPress={() => onQuick(a, 'skipped')} />
         <QuickButton icon="contrast" color={theme.colors.partly} label={t('today.state.partly')} onPress={() => onPartly(a)} />
         <QuickButton icon="checkmark" color={theme.colors.done} filled label={t('today.state.done')} onPress={() => onQuick(a, 'done')} />
-      </View>
+      </TourTarget>
     </Card>
   );
 }

@@ -123,22 +123,6 @@ export default function TodayScreen() {
             </Text>
           </Card>
         ) : null}
-        {tour === 'try' ? (
-          <Card tone="accent">
-            <Text variant="caption" muted>{t('firstRun.step', { n: 1, of: 2 })}</Text>
-            <Text variant="heading">{t('firstRun.tour.tryTitle')}</Text>
-            <Text muted>{t('firstRun.tour.tryBody')}</Text>
-          </Card>
-        ) : null}
-        {tour === 'wrapUp' ? (
-          <Card tone="accent">
-            <Text variant="caption" muted>{t('firstRun.step', { n: 2, of: 2 })}</Text>
-            <Text variant="heading">{t('firstRun.tour.wrapTitle')}</Text>
-            <Text muted>{t('firstRun.tour.wrapBody')}</Text>
-            <Button title={t('firstRun.tour.done')} onPress={() => void firstRun.finishTour()} style={styles.start} />
-          </Card>
-        ) : null}
-
         {batteryHelp ? <Banner message={t('battery.banner')} action={t('battery.open')} onPress={() => void openBatterySettings()} /> : null}
 
         {today.state === 'none' && !(pausedLine?.kind === 'everything') ? (

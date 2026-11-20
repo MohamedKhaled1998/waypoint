@@ -1,5 +1,6 @@
+import { explainOnScreen } from './PermissionScreen';
 import * as Notifications from 'expo-notifications';
-import { Alert, Platform } from 'react-native';
+import { Platform } from 'react-native';
 import i18n from '../i18n';
 import { ACTION_IDS, REMINDER_CATEGORY } from './headless';
 import type { Notifier } from './notifier';
@@ -67,16 +68,6 @@ export const phonePermissions: PermissionPlatform = {
     else await Notifications.requestExactAlarmPermissionsAsync().catch(() => {});
   },
   explain(step: PermissionStep) {
-    return new Promise<boolean>((resolve) =>
-      Alert.alert(
-        i18n.t(`reminders.permission.${step}.title`),
-        `${i18n.t(`reminders.permission.${step}.why`)}\n\n${i18n.t(`reminders.permission.${step}.without`)}`,
-        [
-          { text: i18n.t('reminders.permission.notNow'), style: 'cancel', onPress: () => resolve(false) },
-          { text: i18n.t('reminders.permission.allow'), onPress: () => resolve(true) },
-        ],
-        { cancelable: false },
-      ),
-    );
+    return explainOnScreen(step);
   },
 };

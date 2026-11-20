@@ -17,6 +17,8 @@ import { registerPushToken, routeForPush } from '../push/push';
 import { SessionProvider, useSession } from '../auth/SessionProvider';
 import { View } from 'react-native';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
+import { PermissionScreen } from '../reminders/PermissionScreen';
+import { TourOverlay } from '../firstrun/Tour';
 import { resumeDecision } from '../firstrun/firstRun';
 import { httpPlanApi } from '../plan/api';
 import { firstRun, settlePermissions, useFirstRun } from '../firstrun/native';
@@ -134,6 +136,8 @@ export default function RootLayout() {
       <SessionProvider>
         <StatusBar style={theme.isDark ? 'light' : 'dark'} />
         <Routes />
+        <TourOverlay />
+        <PermissionScreen />
       </SessionProvider>
     </KeyboardProvider>
   );

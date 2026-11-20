@@ -1,8 +1,10 @@
 import { useEffect } from 'react';
-import { View } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { ActivityIndicator, View } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { StyleSheet } from 'react-native-unistyles';
+import { StyleSheet, useUnistyles } from 'react-native-unistyles';
+import { Card } from '../ui/Card';
 import { firstRun } from '../firstrun/native';
 import { usePlanBanners } from '../plan/usePlan';
 import { Button } from '../ui/Button';
@@ -12,6 +14,7 @@ import { Text } from '../ui/Text';
 /** First-run step 4, after the Interview: the Plan is being drafted; it waits on Today if the user leaves. */
 export default function DraftingScreen() {
   const { t } = useTranslation();
+  const { theme } = useUnistyles();
   const router = useRouter();
   const { waitingVersionId } = usePlanBanners();
 
@@ -25,11 +28,17 @@ export default function DraftingScreen() {
     <View style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
       <StepCounter step="drafting" />
-      <View style={styles.body}>
-        <Text variant="heading">{t('firstRun.draftingTitle')}</Text>
-        <Text muted>{t('firstRun.draftingBody')}</Text>
-      </View>
-      <Button kind="secondary" title={t('firstRun.leaveForNow')} onPress={() => router.replace('/')} />
+      <ActivityIndicator color={theme.colors.accent} size="large" style={styles.start} />
+      <Text variant="title">{t('firstRun.draftingTitle')}</Text>
+      <Text muted>{t('firstRun.draftingBody')}</Text>
+      <Card>
+        <View style={styles.row}>
+          <Ionicons name="chatbubble-ellipses-outline" size={18} color={theme.colors.accent} />
+          <Text variant="label" style={[styles.flex, styles.regular]}>{t('firstRun.draftingSummary')}</Text>
+        </View>
+      </Card>
+      <Text variant="label" muted style={styles.regular}>{t('firstRun.draftingClose')}</Text>
+      <Button kind="quiet" title={t('firstRun.leaveForNow')} style={styles.startQuiet} onPress={() => router.replace('/')} />
     </View>
   );
 }
@@ -37,11 +46,15 @@ export default function DraftingScreen() {
 const styles = StyleSheet.create((theme, rt) => ({
   container: {
     flex: 1,
-    gap: theme.space.lg,
+    gap: 18,
     padding: theme.space.xl,
     paddingTop: theme.space.xl + rt.insets.top,
     paddingBottom: theme.space.xl + rt.insets.bottom,
     backgroundColor: theme.colors.background,
   },
-  body: { flex: 1, justifyContent: 'center', gap: theme.space.sm },
+  start: { alignSelf: 'flex-start' },
+  startQuiet: { alignSelf: 'flex-start', paddingHorizontal: 0 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  flex: { flex: 1 },
+  regular: { fontWeight: '400' },
 }));
