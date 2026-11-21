@@ -1,9 +1,10 @@
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useSession } from '../auth/SessionProvider';
 import { httpPlanApi } from './api';
 import { offlinePlanApi } from './offlineApi';
 import { createPlanReview, type PlanSummary } from './review';
+import { pollPlanSummaries } from './summaryPoll';
 
 /** One Plan review, for the version in the route. */
 export function usePlanReview(versionId: string) {
@@ -27,14 +28,20 @@ export function usePlanSummaries() {
   const session = useSession();
   const [plans, setPlans] = useState<PlanSummary[]>([]);
   const [loaded, setLoaded] = useState(false);
+  // While the screen is focused, and again every 10 s while a Plan is drafting.
+  const stop = useRef<(() => void) | null>(null);
   const refresh = useCallback(() => {
-    httpPlanApi(session)
-      .summaries()
-      .then((p) => {
-        setPlans(p);
-        setLoaded(true);
-      })
-      .catch(() => {});
+    stop.current?.();
+    const stopThis = pollPlanSummaries(httpPlanApi(session), (p) => {
+      setPlans(p);
+      setLoaded(true);
+    });
+    stop.current = stopThis;
+    // Leaving the screen stops whichever poll is current, including one a retry started since.
+    return () => {
+      stop.current?.();
+      stop.current = null;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.status]);
   useFocusEffect(refresh);
@@ -47,6 +54,7 @@ export function usePlanBanners() {
   const { plans, refresh } = usePlanSummaries();
   const late = plans.find((p) => p.draftLate);
   return {
+    plans,
     drafting: plans.some((p) => p.drafting),
     late: late !== undefined,
     retryDraft: async () => {

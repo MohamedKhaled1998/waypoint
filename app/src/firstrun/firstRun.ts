@@ -58,9 +58,12 @@ export function createFirstRun(store: KeyValueStore) {
     async start() {
       if (state.step === null) await set('signIn');
     },
-    /** Signed in: first run moves past Sign in; a phone with no first run in progress is simply done. */
-    async signedIn() {
-      if (state.step === 'signIn') await set('aspiration');
+    /**
+     * Signed in: first run moves past Sign in, or ends there for an account the server says is already set up (signing
+     * out and back in); a phone with no first run in progress is simply done. Unable to ask, it goes on to Aspiration.
+     */
+    async signedIn(isSetUp: () => Promise<boolean> = async () => false) {
+      if (state.step === 'signIn') await set((await isSetUp().catch(() => false)) ? 'done' : 'aspiration');
       else if (state.step === null) await set('done');
     },
     advance: (step: FirstRunStep) => set(step),

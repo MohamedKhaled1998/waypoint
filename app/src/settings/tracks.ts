@@ -89,5 +89,7 @@ export type Share = { aspirationId: string; shortName: string; hue: string; hour
 
 /** The Time budget bar: one segment per Aspiration, by its share of the budget; what is not shared stays empty. */
 export function splitSegments(split: Share[], budget: number): { aspirationId: string; hue: string; fraction: number }[] {
-  return split.map((s) => ({ aspirationId: s.aspirationId, hue: s.hue, fraction: budget > 0 ? Math.min(1, Math.round((s.hours / budget) * 1000) / 1000) : 0 }));
+  // Shares over the budget (until a Re-plan fits them) fill the bar between them rather than pushing the last ones out.
+  const whole = Math.max(budget, split.reduce((sum, s) => sum + s.hours, 0));
+  return split.map((s) => ({ aspirationId: s.aspirationId, hue: s.hue, fraction: whole > 0 ? Math.round((s.hours / whole) * 1000) / 1000 : 0 }));
 }

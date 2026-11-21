@@ -13,7 +13,7 @@ import { remindersLookDead } from '../../pause/battery';
 import { todayPausedLine } from '../../pause/pause';
 import { usePauses } from '../../pause/usePauses';
 import { openBatterySettings } from '../../push/native';
-import { usePlanBanners, usePlanSummaries } from '../../plan/usePlan';
+import { usePlanBanners } from '../../plan/usePlan';
 import { ActionSheet } from '../../today/ActionSheet';
 import { AspirationChips, NowCard, NowLine, TimelineRow, WaitingPill } from '../../today/TodayParts';
 import { buildToday, timeLabel, type CheckInState, type ScheduledActionView } from '../../today/today';
@@ -44,8 +44,7 @@ export default function TodayScreen() {
   const { theme } = useUnistyles();
   const router = useRouter();
   const unfinished = useUnfinishedInterview();
-  const { drafting, late, retryDraft, waitingVersionId } = usePlanBanners();
-  const { plans } = usePlanSummaries();
+  const { plans, drafting, late, retryDraft, waitingVersionId } = usePlanBanners();
   const { step: tourStep } = useFirstRun();
   const { actions, slots, loaded, task, undo, failed, move } = useToday();
   const paused = usePauses(plans);

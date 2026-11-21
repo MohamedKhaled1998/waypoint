@@ -69,6 +69,24 @@ describe('resuming an interrupted first run', () => {
     expect((await reopen(store)).getState().step).toBe('aspiration');
   });
 
+  it('skips the first run for an account that is already set up, as after a sign-out and back in', async () => {
+    const store = memoryStore();
+    const f = await reopen(store);
+    await f.start();
+    await f.signedIn(async () => true);
+    expect((await reopen(store)).getState().step).toBe('done');
+  });
+
+  it('goes on to Aspiration when it cannot ask whether the account is set up', async () => {
+    const store = memoryStore();
+    const f = await reopen(store);
+    await f.start();
+    await f.signedIn(async () => {
+      throw new Error('offline');
+    });
+    expect((await reopen(store)).getState().step).toBe('aspiration');
+  });
+
   it('forgets the step on sign-out', async () => {
     const store = memoryStore();
     const f = await reopen(store);

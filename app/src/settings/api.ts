@@ -74,6 +74,8 @@ export function httpMyDataApi(auth: Auth) {
   return {
     exportZip: async () => new Uint8Array(await (await call('/me/export', 'GET')).arrayBuffer()),
     deleteAccount: async () => void (await call('/me', 'DELETE')),
+    /** Whether this account finished its first Interview (Slots, Time budget and Contact frequency are set). */
+    isSetUp: async () => ((await (await call('/me/setup', 'GET')).json()) as { done: boolean }).done,
   };
 }
 export type SettingsApi = ReturnType<typeof httpSettingsApi>;

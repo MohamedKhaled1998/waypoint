@@ -21,6 +21,7 @@ import { PermissionScreen } from '../reminders/PermissionScreen';
 import { TourOverlay } from '../firstrun/Tour';
 import { resumeDecision } from '../firstrun/firstRun';
 import { httpPlanApi } from '../plan/api';
+import { httpMyDataApi } from '../settings/api';
 import { firstRun, settlePermissions, useFirstRun } from '../firstrun/native';
 
 applySavedAppearance();
@@ -37,7 +38,7 @@ function Routes() {
     if (status !== 'signedIn' || !first.loaded || resumed.current) return;
     resumed.current = true;
     void (async () => {
-      await firstRun.signedIn();
+      await firstRun.signedIn(httpMyDataApi({ getAccessToken, renewAccess }).isSetUp);
       const step = firstRun.getState().step;
       const waiting =
         step === 'planReview'

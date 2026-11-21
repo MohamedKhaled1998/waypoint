@@ -92,4 +92,18 @@ describe('Time budget', () => {
       ['teal', 0.2],
     ]);
   });
+
+  it('shows every Aspiration when the shares add up to more than the budget', () => {
+    const segments = splitSegments(
+      [
+        { aspirationId: 'a', shortName: 'Run', hue: 'coral', hours: 4 },
+        { aspirationId: 'b', shortName: 'Spanish', hue: 'teal', hours: 1 },
+      ],
+      4,
+    );
+    expect(segments.map((s) => [s.hue, s.fraction])).toEqual([
+      ['coral', 0.8],
+      ['teal', 0.2],
+    ]);
+  });
 });
